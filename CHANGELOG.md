@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2
+
+- 隱藏首頁彈出廣告（`#HomePagePopupBannerSection`）並恢復頁面捲動
+
 ## 0.5.1
 
 - 登入狀態不再干擾：只有 `get_pc` 回應 `90309999` 時才替換資料

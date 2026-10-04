@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Shopee Peek
-// @version      0.5.1
+// @version      0.5.2
 // @namespace    https://github.com/YTsnipers/shopee-peek
 // @license      MIT
 // @homepageURL  https://github.com/YTsnipers/shopee-peek
@@ -241,3 +241,10 @@ const s = document.createElement('script');
 s.textContent = `(${page})();`;
 (document.head || document.documentElement).appendChild(s);
 s.remove();
+
+const css = document.createElement('style');
+css.textContent = `
+  div:has(> div > #HomePagePopupBannerSection), #HomePagePopupBannerSection { display: none !important; }
+  html:has(#HomePagePopupBannerSection), body:has(#HomePagePopupBannerSection) { overflow: auto !important; }
+`;
+(document.head || document.documentElement).appendChild(css);
