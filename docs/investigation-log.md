@@ -55,14 +55,26 @@ LINE 版資料的限制：`product_price` 為 `null` 且列在 `removed_fields`�
 | 賣場資訊空白 | LINE 版清空 `shop_detailed` | 頁面內呼叫 `get_shop_base`，填回空欄位 |
 | 首次瀏覽跳出語言選擇框 | 缺少 `language` cookie | 未設定時寫入 `language=zhHant` |
 
-## 6. 測試方法
+## 6. 補上價格（v0.4 → v0.5）
+
+| 問題 | 原因 | 解法 |
+|---|---|---|
+| 官方 API 不給價格 | 伺服器端移除 | 改用比價網站 BigGo 的資料 |
+| BigGo 搜尋 API 拒絕直接呼叫 | 回 `Please use correct method.` | 先解析搜尋結果頁 HTML，用 `id=賣場ID.商品ID` 精準比對 |
+| 價格顯示 `$4690` | 卡片上 `$469` 與回饋率 `0~10%` 文字相連 | 只取內容剛好是價格的元素 |
+| 使用者瀏覽器看不到價格框 | 標題外層是 `overflow:hidden` + `line-clamp:2` 的容器，窄視窗下價格框被裁掉 | 往外找到第一個不裁切的祖先再插入 |
+| 區間 `$300 ~ $1,000` 不準 | 混入已下架的佔位規格 | 錄下 BigGo 下拉選單的請求，找到公開的規格 API，濾掉 `is_offline` |
+| 點規格要換價格 | — | `history_id` 結尾等於蝦皮 `model_id`，由選中的按鈕換算規格索引後對應 |
+| 登入使用者的價格被蓋掉 | 無條件替換 `get_pc` | 只在回應 `90309999` 時替換 |
+
+## 7. 測試方法
 
 - 新版 Chromium 禁止對預設設定檔開啟遠端除錯埠，改為另開獨立設定檔的除錯模式瀏覽器，透過 Chrome DevTools Protocol 錄製請求、回應與畫面
 - 為了測試真實的 Tampermonkey 行為，只複製 Tampermonkey 的擴充功能資料到獨立設定檔
 - 短時間大量載入商品頁會觸發 `/verify/captcha?scene=crawler_item`，之後改用模擬（直接 `pushState` 到 `/verify/`）測試站內換頁
 - 編輯器貼上更新失敗時（Dashboard 顯示的大小沒變），改用本機 HTTP 伺服器提供 `.user.js`，讓 Tampermonkey 走安裝流程
 
-## 7. 判斷錯誤與修正
+## 8. 判斷錯誤與修正
 
 | 原本的判斷 | 實際 |
 |---|---|
@@ -70,3 +82,4 @@ LINE 版資料的限制：`product_price` 為 `null` 且列在 `removed_fields`�
 | 伺服器完全不送資料，前端無計可施 | 桌面版不送，LINE 版會送 |
 | Brave 擋掉安全模組回報才被判成機器人 | 無關 |
 | 使用者瀏覽器有快取，蝦皮 JS 比腳本先跑 | 實際原因是站內換頁 |
+| 價格框不見是 VPN 擋了 BigGo | Console 顯示價格有抓到，是被裁切容器藏起來 |
