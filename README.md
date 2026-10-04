@@ -1,26 +1,27 @@
 # Shopee Peek
 
-某新加坡電商會對未登入的訪客跳出登入頁，阻擋瀏覽商品。作者基於資訊自由流通的精神開發這支油猴腳本：從 Google 搜尋結果點進商品頁，不用登入就能看到商品資訊。
+某新加坡電商會對未登入的訪問跳出登入頁，阻擋瀏覽商品。
+作者基於資訊自由流通的精神開發此油猴腳本：從 Google 搜尋結果點進商品頁，不用登入就能看到商品資訊。
 
 ## 安裝
 
 1. 安裝 [Tampermonkey](https://www.tampermonkey.net/)
-2. Chromium 系瀏覽器（Chrome、Brave、Edge）：到 `chrome://extensions` → Tampermonkey → 詳細資料 → 打開「允許使用者腳本」
-3. 點這個連結安裝：[shopee-peek.user.js](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/shopee-peek.user.js)
+2. Chrome 系瀏覽器（Chrome、Brave、Edge）：至 `chrome://extensions` → Tampermonkey → 詳細資料 → 打開「允許使用者腳本」
+3. 安裝連結：[shopee-peek.user.js](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/shopee-peek.user.js)
 
 ## 截圖
 
-未安裝：未登入時被導到錯誤頁
+未安裝：未登入時被阻擋訪問
 
 <img src="docs/before.png" width="360">
 
-安裝後：直接顯示原生商品頁
+腳本運行後：顯示原生商品頁
 
 <img src="docs/after.png" width="800">
 
-## 能做和不能做
+## 功能與限制
 
-| 能看到 | 看不到 |
+| 看的到 | 看不到 |
 |---|---|
 | 商品標題、多圖輪播 | 價格 |
 | 規格選項 | 銷量 |
