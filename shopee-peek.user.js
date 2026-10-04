@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Shopee Peek
-// @version      0.5.2
+// @version      0.5.3
 // @namespace    https://github.com/YTsnipers/shopee-peek
 // @license      MIT
 // @homepageURL  https://github.com/YTsnipers/shopee-peek
@@ -20,17 +20,26 @@ if (!document.cookie.includes('language=')) document.cookie = 'language=zhHant; 
 
 document.addEventListener('peek-req', (e) => {
   const { id, shop, item } = JSON.parse(e.detail);
+  const reply = (entry) => document.dispatchEvent(new CustomEvent('peek-res', { detail: JSON.stringify({ id, entry }) }));
   GM_xmlhttpRequest({
     url: `https://shopee.tw/product/${shop}/${item}`,
     headers: { 'User-Agent': UA },
     anonymous: true,
+    timeout: 15000,
     onload: (r) => {
-      const raw = new DOMParser().parseFromString(r.responseText, 'text/html').querySelector('script[type="text/mfe-initial-data"]');
-      const bff = raw && JSON.parse(raw.textContent).initialState.DOMAIN_PDP?.data?.PDP_BFF_DATA;
-      const entry = bff ? bff.cachedMap[bff.currentKey] : null;
-      document.dispatchEvent(new CustomEvent('peek-res', { detail: JSON.stringify({ id, entry }) }));
+      let entry = null;
+      try {
+        const raw = new DOMParser().parseFromString(r.responseText, 'text/html').querySelector('script[type="text/mfe-initial-data"]');
+        const bff = raw && JSON.parse(raw.textContent).initialState.DOMAIN_PDP?.data?.PDP_BFF_DATA;
+        entry = bff ? bff.cachedMap[bff.currentKey] : null;
+      } catch (err) {
+        console.info('[Shopee Peek] LINE 版資料解析失敗', err);
+      }
+      reply(entry);
       if (entry) showPrice(shop, item, entry);
     },
+    onerror: () => reply(null),
+    ontimeout: () => reply(null),
   });
 });
 
@@ -200,27 +209,43 @@ const page = () => {
 
   const oo = XMLHttpRequest.prototype.open;
   const os = XMLHttpRequest.prototype.send;
+  const osh = XMLHttpRequest.prototype.setRequestHeader;
   XMLHttpRequest.prototype.open = function (m, u, ...rest) {
-    this._peekUrl = String(u);
+    this._peek = { method: m, url: String(u), headers: [] };
     return oo.call(this, m, u, ...rest);
+  };
+  XMLHttpRequest.prototype.setRequestHeader = function (k, v) {
+    this._peek?.headers.push([k, v]);
+    return osh.call(this, k, v);
   };
   XMLHttpRequest.prototype.send = function (body) {
     const x = this;
-    const u = x._peekUrl || '';
-    const fake = (t) => {
+    const { method = 'GET', url: u = '', headers = [] } = x._peek || {};
+    const fake = (t, status = 200, hdrs = null) => {
       Object.defineProperty(x, 'responseText', { get: () => t });
       Object.defineProperty(x, 'response', { get: () => (x.responseType === 'json' ? JSON.parse(t) : t) });
-      Object.defineProperty(x, 'status', { get: () => 200 });
+      Object.defineProperty(x, 'status', { get: () => status });
+      if (hdrs) {
+        x.getResponseHeader = (k) => hdrs.get(k);
+        x.getAllResponseHeaders = () => [...hdrs].map(([k, v]) => `${k}: ${v}`).join('\r\n');
+      }
+    };
+    const finish = (...events) => {
+      Object.defineProperty(x, 'readyState', { get: () => 4 });
+      for (const ev of ['readystatechange', ...events]) x.dispatchEvent(new ProgressEvent(ev));
     };
     if (isPdp(u)) {
-      return pdpBody(u).then((b) => {
-        if (!b) return os.call(x, body);
-        fake(b);
-        Object.defineProperty(x, 'readyState', { get: () => 4 });
-        x.dispatchEvent(new Event('readystatechange'));
-        x.dispatchEvent(new ProgressEvent('load'));
-        x.dispatchEvent(new ProgressEvent('loadend'));
-      });
+      const init = { method, headers, credentials: x.withCredentials ? 'include' : 'same-origin' };
+      if (!/^(GET|HEAD)$/i.test(method)) init.body = body;
+      return window.fetch(u, init)
+        .then(async (r) => {
+          fake(await r.text(), r.status, r.headers);
+          finish('load', 'loadend');
+        })
+        .catch(() => {
+          fake('', 0);
+          finish('error', 'loadend');
+        });
     }
     if (isApi(u)) x.addEventListener('readystatechange', () => {
       if (x.readyState === 4 && String(x.responseText).includes('90309999')) fake(EMPTY);
