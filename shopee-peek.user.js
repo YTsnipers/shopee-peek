@@ -21,6 +21,7 @@ if (!document.cookie.includes('language=')) document.cookie = 'language=zhHant; 
 document.addEventListener('peek-req', (e) => {
   const { id, shop, item } = JSON.parse(e.detail);
   const reply = (entry) => document.dispatchEvent(new CustomEvent('peek-res', { detail: JSON.stringify({ id, entry }) }));
+  if (!/^\d+$/.test(shop) || !/^\d+$/.test(item)) return reply(null);
   GM_xmlhttpRequest({
     url: `https://shopee.tw/product/${shop}/${item}`,
     headers: { 'User-Agent': UA },
@@ -181,18 +182,25 @@ const renderVariantPrice = () => {
 document.addEventListener('click', () => setTimeout(renderVariantPrice, 50), true);
 setInterval(renderVariantPrice, 500);
 
+let priceSeq = 0;
+let priceItem = null;
+
 const showPrice = async (shop, item, entry) => {
+  const my = ++priceSeq;
   const title = entry.item.title;
   priceTitle = title;
+  priceItem = { shop, item };
   variantState = null;
   const link = `https://biggo.com.tw/s/${encodeURIComponent(title)}`;
   drawPrice('價格載入中…', link);
   const list = await fetchVariants(shop, item);
+  if (my !== priceSeq) return;
   if (list) {
     variantState = { list, link, tiers: (entry.item.tier_variations || []).map((t) => t.options), models: entry.item.models || [] };
     return renderVariantPrice();
   }
   const single = await fetchSinglePrice(shop, item, link);
+  if (my !== priceSeq) return;
   drawPrice(single || '查無價格', link);
 };
 
@@ -217,6 +225,7 @@ const drawPrice = (text, link, note = '', quiet = false) => {
 };
 
 setInterval(() => {
+  if (!priceItem || !onItem(priceItem.shop, priceItem.item)) return document.getElementById('peek-price')?.remove();
   const h1 = findTitle();
   if (priceState && !h1 && !priceState.warned) {
     priceState.warned = true;
@@ -244,7 +253,13 @@ const BOT_UA = 'facebookexternalhit/1.1';
 const parseItemList = (html) => {
   const raw = [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('script[type="application/ld+json"]')]
     .map((s) => s.textContent).find((x) => x.includes('"ItemList"'));
-  return raw ? JSON.parse(raw).itemListElement : [];
+  let list = [];
+  try {
+    list = raw ? JSON.parse(raw).itemListElement : [];
+  } catch {
+    return [];
+  }
+  return Array.isArray(list) ? list.filter((x) => typeof x?.name === 'string' && typeof x.image === 'string' && /i\.\d+\.\d+$/.test(x.url)) : [];
 };
 
 const fetchSearchPage = (keyword, page) => new Promise((resolve) => GM_xmlhttpRequest({
@@ -260,6 +275,9 @@ const fetchSearchPage = (keyword, page) => new Promise((resolve) => GM_xmlhttpRe
 document.addEventListener('peek-search-req', async (e) => {
   const { id, keyword, page } = JSON.parse(e.detail);
   let items = [];
+  if (typeof keyword !== 'string' || !Number.isInteger(page) || page < 0) {
+    return document.dispatchEvent(new CustomEvent('peek-search-res', { detail: JSON.stringify({ id, items }) }));
+  }
   for (let i = 0; i < 3 && !items.length; i++) items = await fetchSearchPage(keyword, page);
   for (const it of items) {
     const m = it.url.match(/i\.(\d+\.\d+)$/);
@@ -267,6 +285,10 @@ document.addEventListener('peek-search-req', async (e) => {
   }
   document.dispatchEvent(new CustomEvent('peek-search-res', { detail: JSON.stringify({ id, items }) }));
 });
+
+setInterval(() => {
+  if (location.pathname !== '/search') delete document.documentElement.dataset.peekNoPrice;
+}, 500);
 
 const el = (tag, css, text) => {
   const n = document.createElement(tag);
@@ -360,7 +382,10 @@ const page = () => {
     const u = typeof input === 'string' ? input : input.url;
     return of.apply(this, arguments).then(async (r) => {
       if (!isApi(u)) return r;
-      if (!(await r.clone().text()).includes('90309999')) return r;
+      if (!(await r.clone().text()).includes('90309999')) {
+        if (isSearch(u)) delete document.documentElement.dataset.peekNoPrice;
+        return r;
+      }
       if (isSearch(u)) {
         const s = await searchBody(u);
         return json(s || empty(u));
