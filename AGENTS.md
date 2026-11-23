@@ -47,9 +47,11 @@ Each of these has one supported way; a new request or network call uses it inste
 4. Search a keyword: page 1 shows 10 results with images, no prices and no paginator.
 5. Logged in: product and search pages match what you see with the script disabled.
 
-Steps 2 to 5 hit Shopee from the user's own IP and spend the quota they browse with: the LINE route allows about 8 product loads per 10 minutes and recovers after about 30, and the search route has its own quota. Cover a change with an offline test first; tell the user before any live request and keep it to the steps the change touches. Loading many products in a short time triggers `/verify/captcha?scene=crawler_item` and rate limiting, so space manual tests out. To install a local edit, serve the file over local HTTP and open the `.user.js` URL so Tampermonkey runs its install flow; pasting into Tampermonkey's editor sometimes fails to save.
+Steps 2 to 5 hit Shopee from the user's own IP and spend the quota they browse with. The product and search routes have separate quotas; the measured limits and recovery times live only in the README's "Rate limiting" section, so read them there. Cover a change with an offline test first; tell the user before any live request and keep it to the steps the change touches. Loading many products in a short time triggers `/verify/captcha?scene=crawler_item` and rate limiting, so space manual tests out. To install a local edit, serve the file over local HTTP and open the `.user.js` URL so Tampermonkey runs its install flow; pasting into Tampermonkey's editor sometimes fails to save.
 
-When reporting a live test, open with a one-sentence verdict in plain language, then keep two causes apart: the script failed, or Shopee blocked or rate-limited the route (HTTP 403 with `90309999`, or HTTP 200 with an empty `cachedMap`). A rate-limited run proves nothing about the normal path; say which steps it left untested.
+When reporting a live test, open with a one-sentence verdict in plain language, then keep two causes apart: the script failed, or Shopee blocked or rate-limited the route (HTTP 403 with `90309999`, or HTTP 200 with an empty `cachedMap`). A rate-limited run proves nothing about the normal path; say which steps it left untested. Tell the causes apart from the `[Shopee Peek]` console lines (each blocked route logs its status), not by calling Shopee with curl: that spends the same quota.
+
+A live test that shows something new about Shopee's limits (a status code, a trigger count, a recovery time, a route that stays blocked) goes into the "Rate limiting" section of all three READMEs in the same change, each in its own language. Label a guess "unverified" and give the observation it rests on.
 
 ## Rules and what enforces them
 
@@ -61,6 +63,8 @@ When reporting a live test, open with a one-sentence verdict in plain language, 
 | Rewritten responses keep the shape components read | `tests/`: stub-shape test for `search_suggestion`; new stubs need their own case |
 | Don't spend the user's IP quota on checks a fixture can do | Judgment: this file, "Verify a change" |
 | Live-test reports lead with a verdict and separate script failure from Shopee blocking | Judgment: this file, "Verify a change" |
+| A route Shopee blocks says so in the console with its status | `tests/`: blocked-search log test; a new route needs its own case |
+| New observations about Shopee's limits go into all three READMEs' "Rate limiting" section | Judgment: this file, "Verify a change"; AGENTS.md links there instead of copying the numbers |
 
 ## Release
 
