@@ -49,6 +49,20 @@ Tampermonkey installs later versions automatically.
 
 To report a bug, open the DevTools console, filter on `[Shopee Peek]`, and paste those lines into an issue with the product URL.
 
+### Rate limiting
+
+Shopee limits how often one IP can load pages through the routes the script uses. What each limit looks like:
+
+| Route | When limited | What you see |
+|---|---|---|
+| Product data (LINE User-Agent) | HTTP 200, but the embedded data's `cachedMap` is empty | The plain BigGo card instead of the full product page; the console logs `[Shopee Peek] LINE 版回傳空資料` |
+| Search (social-preview User-Agents) | `facebookexternalhit`, `Twitterbot` and `Googlebot` all get HTTP 403 with `90309999` | The search page shows 「找不到結果」 ("no results") |
+| Home feed | Shopee returns empty data; the script doesn't cause this | 「每日新發現」 (Daily Discover) on the home page is empty when the limit widens |
+
+- Trigger and recovery: earlier tests hit the limit after about 8 product pages in 10 minutes, and it lifted after about 30 minutes. In a later test, after 65 minutes with no requests, product pages still showed the plain card and search still showed no results; the home feed had come back.
+- Space out manual tests, and don't open many products in a row.
+- Once limited, wait 30 to 60 minutes before trying again.
+
 ## How it works
 
 Logged out, Shopee's product API (`/api/v4/pdp/get_pc`) answers with error `90309999`, and the frontend then redirects to the login wall. The script:
