@@ -1,49 +1,83 @@
 # Shopee Peek
 
-某新加坡電商會對未登入的訪問跳出登入頁，阻擋瀏覽商品。
-作者基於資訊自由流通的精神開發此油猴腳本：從 Google 搜尋結果點進商品頁，不用登入就能看到商品資訊。
+**English** | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md)
 
-## 安裝
+A userscript for viewing Shopee Taiwan (shopee.tw) product pages without logging in. Products render in Shopee's own page layout, with a BigGo reference price under the title.
 
-1. 安裝 [Tampermonkey](https://www.tampermonkey.net/)
-2. Chrome 系瀏覽器（Chrome、Brave、Edge）：至 `chrome://extensions` → Tampermonkey → 詳細資料 → 打開「允許使用者腳本」
-3. 安裝連結：[shopee-peek.user.js](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/shopee-peek.user.js)
+[![Install with Tampermonkey](https://img.shields.io/badge/Install-Tampermonkey-00485B?logo=tampermonkey&logoColor=white)](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/shopee-peek.user.js)
+![Site: shopee.tw](https://img.shields.io/badge/site-shopee.tw-EE4D2D)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-## 截圖
-
-未安裝：未登入時被阻擋訪問
-
-<img src="docs/before.png" width="360">
-
-腳本運行後：顯示原生商品頁
-
-<img src="docs/after.png" width="800">
-
-## 功能與限制
-
-| 看的到 | 看不到 |
+| Without the script: login wall | With the script: Shopee's own product page |
 |---|---|
-| 商品標題、多圖輪播 | 銷量 |
-| 規格選項 | 評價 |
-| 商品規格表、商品描述 | 運送方式與運費 |
-| 賣場名稱、回應率、粉絲數 | |
-| 各規格參考價（來自 BigGo，隨選取規格切換） | |
+| <img src="docs/before.png" width="300"> | <img src="docs/after.png" width="520"> |
 
-價格來自比價網站 BigGo，可能不是即時價格；BigGo 沒收錄的商品會顯示「查無價格」。銷量、評價、運送是蝦皮伺服器對未登入訪客直接移除的，目前沒有其他來源。
+## What you see while logged out
 
-## 支援範圍
+| Visible | Not visible |
+|---|---|
+| Title, image gallery | Units sold |
+| Variant options | Ratings and reviews |
+| Spec table, description | Shipping options and fees |
+| Shop name, response rate, followers | Live prices (BigGo can lag behind) |
+| BigGo reference price per variant, follows your selection | Search pages after the first, prices in search results |
+| Search results, first page (10 items with image and title) | |
 
-- 網站：shopee.tw
-- 瀏覽器：Brave（已測試）；Chrome、Edge（未測試）
+Shopee removes units sold, reviews and shipping from logged-out responses on its servers, and no other source for them has turned up. Items BigGo hasn't indexed show 「查無價格」 ("no price found").
 
-## 運作原理
+## Install
 
-見 [docs/how-it-works.md](docs/how-it-works.md)。
+1. Install [Tampermonkey](https://www.tampermonkey.net/).
+2. Chrome, Brave or Edge: open `chrome://extensions` → Tampermonkey → Details → turn on **Allow User Scripts**.
+3. Open [shopee-peek.user.js](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/shopee-peek.user.js); Tampermonkey shows its install page.
 
-## 免責聲明
+Tampermonkey installs later versions automatically.
 
-本腳本僅供個人瀏覽公開商品資訊，與 Shopee 及其關係企業無任何關聯。腳本依賴網站目前的運作方式，網站更新後可能隨時失效，作者不保證功能持續有效。使用者應自行評估使用風險並遵守網站服務條款，作者不對使用本腳本造成的任何後果負責。
+## Supported
 
-## 授權
+- Site: shopee.tw only
+- Tested: Brave + Tampermonkey. Untested: Chrome, Edge, Firefox, Violentmonkey.
 
-MIT
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Still sent to the login page | Tampermonkey can't run user scripts yet, or Shopee changed its site | Check install step 2; if it's on, open an issue |
+| A plain card with only title, image and price | Shopee is rate-limiting your IP, so the full product data isn't available | Wait a while, then reload |
+| 「查無價格」 under the title | BigGo hasn't indexed this item | Nothing to fix; the rest of the page works |
+| Shopee wants a captcha but the page never shows it | The script drops every in-page redirect to `/verify/`, logged in or not | Disable the script for that visit |
+
+To report a bug, open the DevTools console, filter on `[Shopee Peek]`, and paste those lines into an issue with the product URL.
+
+## How it works
+
+Logged out, Shopee's product API (`/api/v4/pdp/get_pc`) answers with error `90309999`, and the frontend then redirects to the login wall. The script:
+
+1. Hooks the page's `fetch`, `XMLHttpRequest` and `history` at `document-start`.
+2. On a blocked `get_pc`, fetches the same product page with the LINE in-app browser's User-Agent. That version embeds product data in the same shape as `get_pc`, which the script hands to Shopee's frontend.
+3. Fills in shop details from `get_shop_base`, answers the other blocked APIs with empty data, and drops redirects to `/verify/`.
+4. Looks up per-variant prices on BigGo and shows them under the title.
+5. On a blocked search, reads the search page's `ItemList` structured data and feeds it to Shopee's search page.
+
+Logged in, Shopee's APIs never return `90309999`, so the script replaces no data.
+
+Details: [docs/how-it-works.md](docs/how-it-works.md). What was tried and why it failed: [docs/investigation-log.md](docs/investigation-log.md). Both in Traditional Chinese.
+
+## For AI assistants
+
+- [`llms.txt`](llms.txt): purpose, behaviour, limits and file map in one file. To ask an AI chat about this project, give it `https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/llms.txt`.
+- [`AGENTS.md`](AGENTS.md): code layout, invariants and a manual test checklist for coding agents that edit the script.
+
+## Contributing
+
+Issues and PRs are welcome. To port the script to another Shopee region, start from the "Hard-coded to Taiwan" list in [`AGENTS.md`](AGENTS.md); whether the LINE User-Agent route works outside Taiwan is untested.
+
+If the script saved you a login, a star helps other people find it.
+
+## Disclaimer
+
+This script is for personally viewing publicly available product information and is not affiliated with Shopee or its affiliates. It depends on how the site works today and may break after any site update; the author doesn't guarantee it keeps working. Users should weigh the risks and follow the site's terms of service; the author accepts no responsibility for any consequence of using the script.
+
+## License
+
+[MIT](LICENSE)

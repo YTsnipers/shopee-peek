@@ -1,0 +1,30 @@
+# Shopee Peek
+
+> Tampermonkey userscript (one file, no build step, MIT) that lets logged-out visitors view Shopee Taiwan (shopee.tw) product pages and the first page of search results. When Shopee's APIs return the logged-out block code `90309999`, the script answers them with data from other public responses, so Shopee's own frontend renders the page, and it adds a BigGo reference price under the title.
+
+Behaviour:
+
+- Runs only on `https://shopee.tw/*`. Logged-in sessions get no data replaced, because Shopee doesn't send them the block code.
+- Product data comes from the same product page fetched with the LINE in-app browser User-Agent; it carries the same structure as the `get_pc` API minus price, reviews, shop and shipping. Shop details are filled from `get_shop_base`.
+- Prices come from BigGo, a third-party price-comparison site. They are reference prices, not live, and switch with the selected variant. Items BigGo hasn't indexed show 「查無價格」.
+- Search results (10 items, title and image, no price) come from the search page's `application/ld+json` `ItemList`, fetched with a link-preview bot User-Agent. Shopee's frontend forbids pagination for logged-out users, so there is only page 1.
+- When Shopee rate-limits the IP and the LINE fetch returns nothing, a full-screen card shows title, image and BigGo price instead.
+- Never available logged out: units sold, ratings and reviews, shipping. Shopee removes them server-side.
+- Side effects: sets the `language=zhHant` cookie if none exists; hides the homepage popup banner; drops every in-page redirect to a URL containing `/verify/`, including captcha pages and when logged in; routes every XHR to `/api/` through `fetch`.
+- Data requests go only to `shopee.tw` and `biggo.com.tw`. Requests made through Tampermonkey carry no cookies; the shop lookup (`get_shop_base`) runs inside the page with Shopee's own cookies. No analytics, no remote code.
+- Tested on Brave + Tampermonkey. Chromium browsers need "Allow User Scripts" turned on for Tampermonkey in `chrome://extensions`.
+
+## Docs
+
+- [README](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/README.md): install, what is and isn't visible, troubleshooting
+- [How it works](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/docs/how-it-works.md): block mechanism, data sources and request flow (Traditional Chinese)
+- [AGENTS.md](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/AGENTS.md): code layout, invariants and test checklist for editing the script
+
+## Source
+
+- [shopee-peek.user.js](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/shopee-peek.user.js): the whole script
+
+## Optional
+
+- [Investigation log](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/docs/investigation-log.md): approaches that were tried and why they failed (Traditional Chinese)
+- [Changelog](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/CHANGELOG.md) (Traditional Chinese)
