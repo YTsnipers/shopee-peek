@@ -2,7 +2,7 @@
 // Each block guards a mistake that shipped at least twice; see the rule table in AGENTS.md.
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
-import { load, BLOCKED } from './harness.mjs';
+import { load, BLOCKED, pdpHtml } from './harness.mjs';
 
 // A hang is a failure: Shopee's request waits forever on a bridge that never replies.
 const test = (name, fn) => nodeTest(name, { timeout: 2000 }, fn);
@@ -47,4 +47,54 @@ test('an XHR to a non-blocked API sees the original body and status', async () =
   await done;
   assert.equal(x.responseText, body);
   assert.equal(x.status, 201);
+});
+
+// Rule: every bridge request gets exactly one reply (0.5.3 and 0.6.0 each fixed a hang).
+const once = async (gm, req, res, detail) => {
+  const { replies } = load({ path: '/x-i.1.23', gm });
+  const got = await replies(req, res, detail);
+  assert.equal(got.length, 1, `${req} replied ${got.length} times`);
+  assert.equal(got[0].id, detail.id);
+  return got[0];
+};
+
+for (const [name, gm] of [
+  ['network error', (o) => o.onerror()],
+  ['timeout', (o) => o.ontimeout()],
+  ['GM throws', () => { throw new Error('boom'); }],
+  ['HTML without data', (o) => o.onload({ status: 200, responseText: '<html></html>' })],
+  ['malformed embedded JSON', (o) => o.onload({ status: 200, responseText: '<script type="text/mfe-initial-data">{oops</script>' })],
+]) {
+  test(`product request replies once with no entry on ${name}`, async () => {
+    const d = await once(gm, 'peek-req', 'peek-res', { id: 7, shop: '1', item: '23' });
+    assert.equal(d.entry, null);
+  });
+  test(`search request replies once with no items on ${name}`, async () => {
+    const d = await once(gm, 'peek-search-req', 'peek-search-res', { id: 8, keyword: 'a', page: 0 });
+    assert.deepEqual(d.items, []);
+  });
+}
+
+test('invalid bridge input replies once without a request', async () => {
+  let calls = 0;
+  const gm = () => calls++;
+  assert.equal((await once(gm, 'peek-req', 'peek-res', { id: 1, shop: '1/../x', item: '2' })).entry, null);
+  assert.deepEqual((await once(gm, 'peek-search-req', 'peek-search-res', { id: 2, keyword: 'a', page: -1 })).items, []);
+  assert.equal(calls, 0);
+});
+
+test('a blocked product page is answered from the LINE entry', async () => {
+  const entry = { item: { title: 'T', models: [], tier_variations: [] }, shop_detailed: { name: null } };
+  const fetch = async (u) => new Response(String(u).includes('get_shop_base') ? '{"data":{"name":"S"}}' : BLOCKED);
+  const gm = (o) => o.onload({ status: 200, responseText: pdpHtml('1', '23', entry) });
+  const { ctx } = load({ path: '/x-i.1.23', gm, fetch });
+  const body = await (await ctx.window.fetch('/api/v4/pdp/get_pc?shop_id=1&item_id=23')).json();
+  assert.equal(body.data.item.title, 'T');
+  assert.equal(body.data.shop_detailed.name, 'S');
+});
+
+test('a blocked product page with no LINE data keeps Shopee\'s response instead of hanging', async () => {
+  const { ctx } = load({ path: '/x-i.1.23', gm: (o) => o.onerror(), fetch: async () => new Response(BLOCKED) });
+  const r = await ctx.window.fetch('/api/v4/pdp/get_pc?shop_id=1&item_id=23');
+  assert.match(await r.text(), /90309999/);
 });

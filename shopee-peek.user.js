@@ -18,45 +18,58 @@ const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/6
 
 if (!document.cookie.includes('language=')) document.cookie = 'language=zhHant; domain=.shopee.tw; path=/; max-age=31536000';
 
-document.addEventListener('peek-req', (e) => {
-  const { id, shop, item } = JSON.parse(e.detail);
-  const reply = (entry) => document.dispatchEvent(new CustomEvent('peek-res', { detail: JSON.stringify({ id, entry }) }));
-  if (!/^\d+$/.test(shop) || !/^\d+$/.test(item)) return reply(null);
-  GM_xmlhttpRequest({
-    url: `https://shopee.tw/product/${shop}/${item}`,
-    headers: { 'User-Agent': UA },
-    anonymous: true,
-    timeout: 15000,
-    onload: (r) => {
-      let entry = null;
-      try {
-        const raw = new DOMParser().parseFromString(r.responseText, 'text/html').querySelector('script[type="text/mfe-initial-data"]');
-        const bff = raw && JSON.parse(raw.textContent).initialState.DOMAIN_PDP?.data?.PDP_BFF_DATA;
-        entry = bff ? bff.cachedMap[bff.currentKey] : null;
-        if (bff && !entry) console.info('[Shopee Peek] LINE 版回傳空資料（疑似蝦皮限流），稍後再試');
-      } catch (err) {
-        console.info('[Shopee Peek] LINE 版資料解析失敗', err);
-      }
-      reply(entry);
-      if (entry) showPrice(shop, item, entry);
-      else showFallback(shop, item);
-    },
-    onerror: () => (reply(null), showFallback(shop, item)),
-    ontimeout: () => (reply(null), showFallback(shop, item)),
-  });
+// The one way to answer a page request: exactly one reply per request, even when the handler throws.
+// `empty` is the reply when it does; the page side reads its fields.
+const serve = (req, res, empty, handler) => document.addEventListener(req, async (e) => {
+  let id = null;
+  let out = empty;
+  try {
+    const d = JSON.parse(e.detail);
+    id = d.id;
+    out = await handler(d);
+  } catch (err) {
+    console.info('[Shopee Peek] 請求處理失敗', req, err);
+  }
+  document.dispatchEvent(new CustomEvent(res, { detail: JSON.stringify({ ...out, id }) }));
+});
+
+// The one way to call GM_xmlhttpRequest: resolves to the response, or null on error or timeout.
+const gm = (url, ua) => new Promise((resolve) => GM_xmlhttpRequest({
+  url,
+  headers: ua ? { 'User-Agent': ua } : {},
+  anonymous: true,
+  timeout: 15000,
+  onload: resolve,
+  onerror: () => resolve(null),
+  ontimeout: () => resolve(null),
+}));
+
+const lineEntry = (html) => {
+  try {
+    const raw = new DOMParser().parseFromString(html, 'text/html').querySelector('script[type="text/mfe-initial-data"]');
+    const bff = raw && JSON.parse(raw.textContent).initialState.DOMAIN_PDP?.data?.PDP_BFF_DATA;
+    const entry = bff ? bff.cachedMap[bff.currentKey] : null;
+    if (bff && !entry) console.info('[Shopee Peek] LINE 版回傳空資料（疑似蝦皮限流），稍後再試');
+    return entry || null;
+  } catch (err) {
+    console.info('[Shopee Peek] LINE 版資料解析失敗', err);
+    return null;
+  }
+};
+
+serve('peek-req', 'peek-res', { entry: null }, async ({ shop, item }) => {
+  if (!/^\d+$/.test(shop) || !/^\d+$/.test(item)) return { entry: null };
+  const r = await gm(`https://shopee.tw/product/${shop}/${item}`, UA);
+  const entry = r && lineEntry(r.responseText);
+  if (entry) showPrice(shop, item, entry);
+  else showFallback(shop, item);
+  return { entry };
 });
 
 const fmt = (n) => `$${Number(n).toLocaleString('en-US')}`;
 let variantState = null;
 
-const gmGet = (url) => new Promise((resolve) => GM_xmlhttpRequest({
-  url,
-  anonymous: true,
-  timeout: 15000,
-  onload: (r) => resolve(r.status === 200 ? r.responseText : null),
-  onerror: () => resolve(null),
-  ontimeout: () => resolve(null),
-}));
+const gmGet = (url) => gm(url).then((r) => (r?.status === 200 ? r.responseText : null));
 
 const fetchVariants = async (shop, item) => {
   for (const kind of ['tw_mall_shopeemall', 'tw_bid_shopee']) {
@@ -152,15 +165,10 @@ const findInShopeeSearch = async (keyword, shop, item) => {
   return null;
 };
 
-const searchOnce = (keyword, shop, item) => new Promise((resolve) => GM_xmlhttpRequest({
-  url: `https://shopee.tw/search?keyword=${encodeURIComponent(keyword)}`,
-  headers: { 'User-Agent': BOT_UA },
-  anonymous: true,
-  timeout: 15000,
-  onload: (r) => resolve(parseItemList(r.responseText).find((x) => x.url.endsWith(`i.${shop}.${item}`)) || null),
-  onerror: () => resolve(null),
-  ontimeout: () => resolve(null),
-}));
+const searchOnce = async (keyword, shop, item) => {
+  const r = await gm(`https://shopee.tw/search?keyword=${encodeURIComponent(keyword)}`, BOT_UA);
+  return (r && parseItemList(r.responseText).find((x) => x.url.endsWith(`i.${shop}.${item}`))) || null;
+};
 
 const selectedModelId = () => {
   if (!variantState) return null;
@@ -266,28 +274,20 @@ const parseItemList = (html) => {
   return Array.isArray(list) ? list.filter((x) => typeof x?.name === 'string' && typeof x.image === 'string' && /i\.\d+\.\d+$/.test(x.url)) : [];
 };
 
-const fetchSearchPage = (keyword, page) => new Promise((resolve) => GM_xmlhttpRequest({
-  url: `https://shopee.tw/search?keyword=${encodeURIComponent(keyword)}&page=${page}`,
-  headers: { 'User-Agent': BOT_UA },
-  anonymous: true,
-  timeout: 15000,
-  onload: (r) => resolve(parseItemList(r.responseText)),
-  onerror: () => resolve([]),
-  ontimeout: () => resolve([]),
-}));
+const fetchSearchPage = async (keyword, page) => {
+  const r = await gm(`https://shopee.tw/search?keyword=${encodeURIComponent(keyword)}&page=${page}`, BOT_UA);
+  return r ? parseItemList(r.responseText) : [];
+};
 
-document.addEventListener('peek-search-req', async (e) => {
-  const { id, keyword, page } = JSON.parse(e.detail);
+serve('peek-search-req', 'peek-search-res', { items: [] }, async ({ keyword, page }) => {
   let items = [];
-  if (typeof keyword !== 'string' || !Number.isInteger(page) || page < 0) {
-    return document.dispatchEvent(new CustomEvent('peek-search-res', { detail: JSON.stringify({ id, items }) }));
-  }
+  if (typeof keyword !== 'string' || !Number.isInteger(page) || page < 0) return { items };
   for (let i = 0; i < 3 && !items.length; i++) items = await fetchSearchPage(keyword, page);
   for (const it of items) {
     const m = it.url.match(/i\.(\d+\.\d+)$/);
     if (m) sessionStorage.setItem(`peek:${m[1]}`, JSON.stringify({ name: it.name, image: it.image }));
   }
-  document.dispatchEvent(new CustomEvent('peek-search-res', { detail: JSON.stringify({ id, items }) }));
+  return { items };
 });
 
 setInterval(() => {
@@ -317,17 +317,19 @@ const page = () => {
   const json = (b) => new Response(b, { status: 200, headers: { 'content-type': 'application/json' } });
   let seq = 0;
 
-  const getEntry = (shop, item) => new Promise((resolve) => {
+  // The one way to ask the sandbox: the sandbox's serve() replies exactly once per id.
+  const ask = (req, res, payload) => new Promise((resolve) => {
     const id = ++seq;
     const onRes = (e) => {
       const d = JSON.parse(e.detail);
       if (d.id !== id) return;
-      document.removeEventListener('peek-res', onRes);
-      resolve(d.entry);
+      document.removeEventListener(res, onRes);
+      resolve(d);
     };
-    document.addEventListener('peek-res', onRes);
-    document.dispatchEvent(new CustomEvent('peek-req', { detail: JSON.stringify({ id, shop, item }) }));
+    document.addEventListener(res, onRes);
+    document.dispatchEvent(new CustomEvent(req, { detail: JSON.stringify({ ...payload, id }) }));
   });
+  const getEntry = (shop, item) => ask('peek-req', 'peek-res', { shop, item }).then((d) => d.entry);
 
   const fillShop = async (entry, shop) => {
     const r = await of(`/api/v4/shop/get_shop_base?shopid=${shop}`, { credentials: 'include' }).then((x) => x.json()).catch(() => null);
@@ -340,17 +342,7 @@ const page = () => {
 
   const isSearch = (u) => String(u).includes('/api/v4/search/search_items');
 
-  const getSearch = (keyword, page) => new Promise((resolve) => {
-    const id = ++seq;
-    const onRes = (e) => {
-      const d = JSON.parse(e.detail);
-      if (d.id !== id) return;
-      document.removeEventListener('peek-search-res', onRes);
-      resolve(d.items);
-    };
-    document.addEventListener('peek-search-res', onRes);
-    document.dispatchEvent(new CustomEvent('peek-search-req', { detail: JSON.stringify({ id, keyword, page }) }));
-  });
+  const getSearch = (keyword, page) => ask('peek-search-req', 'peek-search-res', { keyword, page }).then((d) => d.items || []);
 
   const searchBody = async (u) => {
     const q = new URL(u, location.origin).searchParams;
