@@ -49,10 +49,11 @@ const element = (tag) => {
 export const load = ({ path = '/', gm = () => {}, fetch = async () => new Response('{}') } = {}) => {
   const document = new EventTarget();
   const mounted = [];
+  const logs = [];
   let cookie = '';
   Object.defineProperty(document, 'cookie', { get: () => cookie, set: (v) => { cookie += `${v.split(';')[0]}; `; } });
   const ctx = {
-    console: { info() {}, log() {}, warn() {}, error() {} },
+    console: { info: (...a) => logs.push(a.map(String).join(' ')), log() {}, warn() {}, error() {} },
     location: { pathname: path, origin: 'https://shopee.tw', get href() { return `https://shopee.tw${this.pathname}`; } },
     sessionStorage: new Map(Object.entries({})),
     history: { pushState: () => 'push', replaceState: () => 'replace' },
@@ -86,6 +87,8 @@ export const load = ({ path = '/', gm = () => {}, fetch = async () => new Respon
   return {
     ctx,
     mounted,
+    /** console.info lines, joined per call: what a user pastes into a bug report. */
+    logs,
     /** Read a top-level binding of the script (const/let live in the context's script scope). */
     get: (name) => vm.runInContext(name, ctx),
     /** Fire a bridge request and collect every reply for `ms`. */

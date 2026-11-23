@@ -75,6 +75,15 @@ for (const [name, gm] of [
   });
 }
 
+// Rule: a route Shopee blocks says so in the console, so nobody has to call Shopee by hand to
+// tell a block from a script bug (search 403s were only diagnosable with curl before).
+test('a blocked search page is logged with its HTTP status', async () => {
+  const gm = (o) => o.onload({ status: 403, responseText: BLOCKED });
+  const { replies, logs } = load({ gm });
+  await replies('peek-search-req', 'peek-search-res', { id: 3, keyword: 'a', page: 0 });
+  assert.ok(logs.some((l) => l.includes('[Shopee Peek]') && l.includes('403')), `logs: ${JSON.stringify(logs)}`);
+});
+
 test('invalid bridge input replies once without a request', async () => {
   let calls = 0;
   const gm = () => calls++;

@@ -285,6 +285,7 @@ const parseItemList = (html) => {
 
 const fetchSearchPage = async (keyword, page) => {
   const r = await gm(`https://shopee.tw/search?keyword=${encodeURIComponent(keyword)}&page=${page}`, BOT_UA);
+  if (r && r.status !== 200) console.info(`[Shopee Peek] 蝦皮擋下搜尋頁（HTTP ${r.status}），疑似限流或封鎖`);
   return r ? parseItemList(r.responseText) : [];
 };
 
