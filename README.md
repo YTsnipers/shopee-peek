@@ -21,7 +21,7 @@ A userscript for viewing Shopee Taiwan (shopee.tw) product pages without logging
 | Spec table, description | Shipping options and fees |
 | Shop name, response rate, followers | Live prices (BigGo can lag behind) |
 | BigGo reference price per variant, follows your selection | Search pages after the first, prices in search results |
-| Search results, first page (10 items with image and title) | |
+| Search results, first page (10 items with image and title); may currently be broken, see Rate limiting | |
 
 Shopee removes units sold, reviews and shipping from logged-out responses on its servers, and no other source for them has turned up. Items BigGo hasn't indexed show 「查無價格」 ("no price found").
 
@@ -59,9 +59,10 @@ Shopee limits how often one IP can load pages through the routes the script uses
 | Search (social-preview User-Agents) | `facebookexternalhit`, `Twitterbot` and `Googlebot` all get HTTP 403 with `90309999` | The search page shows 「找不到結果」 ("no results") |
 | Home feed | Shopee returns empty data; the script doesn't cause this | 「每日新發現」 (Daily Discover) on the home page is empty when the limit widens |
 
-- Trigger and recovery: earlier tests hit the limit after about 8 product pages in 10 minutes, and it lifted after about 30 minutes. In a later test, after 65 minutes with no requests, product pages still showed the plain card and search still showed no results; the home feed had come back.
+- Trigger and recovery: earlier tests hit the limit after about 8 product pages in 10 minutes, and it lifted after about 30 minutes. In a later test, after 65 minutes with no requests, product pages still showed the plain card and search still showed no results; the home feed had come back. In the test after that, about 1.5 hours with no requests, product pages were back to the full page; search, more than 3 hours after it was first blocked, still got HTTP 403 with `90309999`.
+- Guess (unverified): search may not be rate-limited but blocked outright: Shopee may have shut out the social-preview User-Agent the script searches with. Product pages recovered within 1.5 hours while search stayed blocked for more than 3. If search keeps getting 403, the search feature is effectively broken.
 - Space out manual tests, and don't open many products in a row.
-- Once limited, wait 30 to 60 minutes before trying again.
+- Once product pages are limited, wait 30 minutes to 2 hours before trying again. For search, see the guess above.
 
 ## How it works
 
