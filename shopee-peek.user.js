@@ -61,8 +61,11 @@ const gmGet = (url) => new Promise((resolve) => GM_xmlhttpRequest({
 const fetchVariants = async (shop, item) => {
   for (const kind of ['tw_mall_shopeemall', 'tw_bid_shopee']) {
     const t = await gmGet(`https://biggo.com.tw/api/v1/spa/product/multiple?i=${kind}&oid=${shop}.${item}`);
-    const list = t && t.startsWith('{') ? JSON.parse(t).list : null;
-    if (list && list.length) return list.map((v) => ({ title: v.title, price: v.price, offline: v.is_offline, modelId: String(v.history_id).split('-').pop() }));
+    let list = null;
+    try {
+      list = JSON.parse(t).list;
+    } catch {}
+    if (Array.isArray(list) && list.length) return list.map((v) => ({ title: v.title, price: v.price, offline: v.is_offline, modelId: String(v.history_id).split('-').pop() }));
   }
   return null;
 };
@@ -73,8 +76,9 @@ const fetchBigGoHit = async (shop, item, link) => {
   const a = new DOMParser().parseFromString(t, 'text/html').querySelector(`a[href*="id=${shop}.${item}&"]`);
   if (!a) return null;
   const image = a.querySelector('img')?.getAttribute('src') || null;
+  const foreign = (n) => [...n.querySelectorAll('a[href*="/r/?i="]')].some((x) => !x.getAttribute('href').includes(`id=${shop}.${item}&`));
   let el = a;
-  for (let i = 0; el && i < 8; i++, el = el.parentElement) {
+  for (let i = 0; el && i < 8 && !foreign(el); i++, el = el.parentElement) {
     const price = [...el.querySelectorAll('*')].filter((n) => !n.children.length).map((n) => n.textContent.trim()).find((x) => /^\$[\d,]+$/.test(x));
     if (price) return { price, image };
   }
@@ -88,7 +92,7 @@ const slugTitle = () => {
   return m ? m[1].replace(/-/g, ' ').trim() : '';
 };
 
-const onItem = (shop, item) => location.pathname.includes(`i.${shop}.${item}`) || location.pathname.includes(`/product/${shop}/${item}`);
+const onItem = (shop, item) => new RegExp(`(?:i\\.${shop}\\.${item}|/product/${shop}/${item})/?$`).test(location.pathname);
 
 const showFallback = async (shop, item) => {
   console.info('[Shopee Peek] 蝦皮商品資料被限流，改用 BigGo 備援');
@@ -309,6 +313,7 @@ const page = () => {
   };
   const isPdp = (u) => String(u).includes('/api/v4/pdp/get_pc');
   const isApi = (u) => String(u).includes('/api/');
+  const blocked = (t) => /\b90309999\b/.test(t);
   const json = (b) => new Response(b, { status: 200, headers: { 'content-type': 'application/json' } });
   let seq = 0;
 
@@ -379,10 +384,10 @@ const page = () => {
   };
 
   window.fetch = function (input, init) {
-    const u = typeof input === 'string' ? input : input.url;
+    const u = input?.url ?? String(input);
     return of.apply(this, arguments).then(async (r) => {
       if (!isApi(u)) return r;
-      if (!(await r.clone().text()).includes('90309999')) {
+      if (!blocked(await r.clone().text())) {
         if (isSearch(u)) delete document.documentElement.dataset.peekNoPrice;
         return r;
       }
@@ -410,17 +415,18 @@ const page = () => {
   XMLHttpRequest.prototype.send = function (body) {
     const x = this;
     const { method = 'GET', url: u = '', headers = [] } = x._peek || {};
+    const def = (k, get) => Object.defineProperty(x, k, { get, configurable: true });
     const fake = (t, status = 200, hdrs = null) => {
-      Object.defineProperty(x, 'responseText', { get: () => t });
-      Object.defineProperty(x, 'response', { get: () => (x.responseType === 'json' ? JSON.parse(t) : t) });
-      Object.defineProperty(x, 'status', { get: () => status });
+      def('responseText', () => t);
+      def('response', () => (x.responseType === 'json' ? JSON.parse(t) : t));
+      def('status', () => status);
       if (hdrs) {
         x.getResponseHeader = (k) => hdrs.get(k);
         x.getAllResponseHeaders = () => [...hdrs].map(([k, v]) => `${k}: ${v}`).join('\r\n');
       }
     };
     const finish = (...events) => {
-      Object.defineProperty(x, 'readyState', { get: () => 4 });
+      def('readyState', () => 4);
       for (const ev of ['readystatechange', ...events]) x.dispatchEvent(new ProgressEvent(ev));
     };
     if (isApi(u)) {
