@@ -98,3 +98,50 @@ test('a blocked product page with no LINE data keeps Shopee\'s response instead 
   const r = await ctx.window.fetch('/api/v4/pdp/get_pc?shop_id=1&item_id=23');
   assert.match(await r.text(), /90309999/);
 });
+
+// Rule: product UI belongs to one product (0.6.0 fixed four leaks: stale price, price box on other
+// pages, ID prefix match, neighbouring BigGo price). Async work writes only while claim() holds.
+test('an item id that is a prefix of the current one is a different product', () => {
+  const { get, ctx } = load({ path: '/x-i.1.234' });
+  const onItem = get('onItem');
+  assert.equal(onItem('1', '23'), false);
+  assert.equal(onItem('1', '234'), true);
+  ctx.location.pathname = '/product/1/23';
+  assert.equal(onItem('1', '23'), true);
+  assert.equal(onItem('1', '2'), false);
+});
+
+// Routes GM requests by URL. LINE answers for any item (or fails when entry is undefined);
+// BigGo variant lookups price item N at $N and wait until release() runs them, newest first.
+const network = (entry) => {
+  const held = [];
+  const gm = (o) => {
+    const line = o.url.match(/shopee\.tw\/product\/(\d+)\/(\d+)/);
+    if (line) return entry === undefined ? held.push(() => o.onerror()) : o.onload({ status: 200, responseText: pdpHtml(line[1], line[2], entry) });
+    const oid = o.url.match(/product\/multiple\?.*oid=\d+\.(\d+)/);
+    if (oid) return held.push(() => o.onload({ status: 200, responseText: JSON.stringify({ list: [{ title: 'v', price: Number(oid[1]), is_offline: false, history_id: 'x-9' }] }) }));
+    o.onerror();
+  };
+  return { gm, release: async () => { held.splice(0).reverse().forEach((f) => f()); await new Promise((r) => setTimeout(r, 20)); } };
+};
+
+test('a late BigGo price for the previous product does not replace the current one', async () => {
+  const net = network({ item: { title: 'T', models: [], tier_variations: [] } });
+  const { ctx, get, replies } = load({ path: '/a-i.1.100', gm: net.gm });
+  await replies('peek-req', 'peek-res', { id: 1, shop: '1', item: '100' });
+  ctx.location.pathname = '/b-i.1.200';
+  await replies('peek-req', 'peek-res', { id: 2, shop: '1', item: '200' });
+  await net.release();
+  assert.equal(get('priceState').text, '$200');
+});
+
+test('a late fallback card for the previous product is not shown on the next one', async () => {
+  const net = network(undefined);
+  const { ctx, mounted, replies } = load({ path: '/a-i.1.23', gm: net.gm });
+  const pending = replies('peek-req', 'peek-res', { id: 1, shop: '1', item: '23' }, 0);
+  ctx.location.pathname = '/b-i.9.99';
+  await net.release();
+  await pending;
+  await new Promise((r) => setTimeout(r, 150));
+  assert.equal(mounted.filter((n) => n.id === 'peek-fallback').length, 0);
+});

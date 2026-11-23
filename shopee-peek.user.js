@@ -107,7 +107,17 @@ const slugTitle = () => {
 
 const onItem = (shop, item) => new RegExp(`(?:i\\.${shop}\\.${item}|/product/${shop}/${item})/?$`).test(location.pathname);
 
+// The one owner of "which product is on screen". Async work for a product (price box, fallback card)
+// writes to the page only while its alive() holds: the URL is still that product and no newer claim exists.
+let priceSeq = 0;
+const claim = (shop, item) => {
+  const my = ++priceSeq;
+  return () => my === priceSeq && onItem(shop, item);
+};
+
 const showFallback = async (shop, item) => {
+  const alive = claim(shop, item);
+  if (!alive()) return;
   console.info('[Shopee Peek] 蝦皮商品資料被限流，改用 BigGo 備援');
   document.getElementById('peek-fallback')?.remove();
   const title = slugTitle();
@@ -133,7 +143,7 @@ const showFallback = async (shop, item) => {
   const mount = () => document.body ? document.body.append(box) : setTimeout(mount, 100);
   mount();
   const watch = setInterval(() => {
-    if (!onItem(shop, item)) clearInterval(watch), box.remove();
+    if (!alive()) clearInterval(watch), box.remove();
   }, 500);
   const cached = sessionStorage.getItem(`peek:${shop}.${item}`);
   const found = cached ? JSON.parse(cached) : title ? await findInShopeeSearch(title, shop, item) : null;
@@ -194,11 +204,10 @@ const renderVariantPrice = () => {
 document.addEventListener('click', () => setTimeout(renderVariantPrice, 50), true);
 setInterval(renderVariantPrice, 500);
 
-let priceSeq = 0;
 let priceItem = null;
 
 const showPrice = async (shop, item, entry) => {
-  const my = ++priceSeq;
+  const alive = claim(shop, item);
   const title = entry.item.title;
   priceTitle = title;
   priceItem = { shop, item };
@@ -206,13 +215,13 @@ const showPrice = async (shop, item, entry) => {
   const link = `https://biggo.com.tw/s/${encodeURIComponent(title)}`;
   drawPrice('價格載入中…', link);
   const list = await fetchVariants(shop, item);
-  if (my !== priceSeq) return;
+  if (!alive()) return;
   if (list) {
     variantState = { list, link, tiers: (entry.item.tier_variations || []).map((t) => t.options), models: entry.item.models || [] };
     return renderVariantPrice();
   }
   const single = await fetchSinglePrice(shop, item, link);
-  if (my !== priceSeq) return;
+  if (!alive()) return;
   drawPrice(single || '查無價格', link);
 };
 
