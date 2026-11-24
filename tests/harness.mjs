@@ -9,7 +9,7 @@ const SCRIPT = process.env.PEEK_SCRIPT || new URL('../shopee-peek.user.js', impo
 // Captured from shopee.tw while logged out (2026-11-23).
 export const BLOCKED = '{"is_customized":false,"is_login":false,"action_type":2,"error":90309999,"tracking_id":"995f0cfd578-09ff-4140-ad2d-5a3c392804dd","redirect_to_error_page":true}';
 
-// Only the selectors the script parses fetched HTML with: script[type="..."].
+// Parses script[type="..."] for LINE PDP HTML; BigGo search reads self.__next_f.push directly.
 class FakeDOMParser {
   parseFromString(html) {
     const scripts = (type) => [...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)]
@@ -105,3 +105,9 @@ export const load = ({ path = '/', gm = () => {}, fetch = async () => new Respon
 export const pdpHtml = (shop, item, entry) => `<html><script type="text/mfe-initial-data">${JSON.stringify({
   initialState: { DOMAIN_PDP: { data: { PDP_BFF_DATA: { cachedMap: entry ? { [`${shop}/${item}`]: entry } : {}, currentKey: `${shop}/${item}` } } } },
 })}</script></html>`;
+
+export const biggoSearchHtml = (list) => {
+  const payload = `15:["$","$L2a",null,${JSON.stringify({ initValue: { ssrData: { result: true, list } } })}]`;
+  const mid = Math.floor(payload.length / 2);
+  return `<html><script>self.__next_f.push([1,${JSON.stringify(payload.slice(0, mid))}])</script><script>self.__next_f.push([1,${JSON.stringify(payload.slice(mid))}])</script></html>`;
+};

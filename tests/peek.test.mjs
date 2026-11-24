@@ -2,7 +2,7 @@
 // Each block guards a mistake that shipped at least twice; see the rule table in AGENTS.md.
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
-import { load, BLOCKED, pdpHtml } from './harness.mjs';
+import { load, BLOCKED, pdpHtml, biggoSearchHtml } from './harness.mjs';
 
 // A hang is a failure: Shopee's request waits forever on a bridge that never replies.
 const test = (name, fn) => nodeTest(name, { timeout: 2000 }, fn);
@@ -75,8 +75,8 @@ for (const [name, gm] of [
   });
 }
 
-// Rule: a route Shopee blocks says so in the console, so nobody has to call Shopee by hand to
-// tell a block from a script bug (search 403s were only diagnosable with curl before).
+// Rule: a route an external host blocks says so in the console, so nobody has to call hosts by hand
+// to tell a block from a script bug (search 403s were only diagnosable with curl before).
 test('a blocked search page is logged with its HTTP status', async () => {
   const gm = (o) => o.onload({ status: 403, responseText: BLOCKED });
   const { replies, logs } = load({ gm });
@@ -89,7 +89,72 @@ test('invalid bridge input replies once without a request', async () => {
   const gm = () => calls++;
   assert.equal((await once(gm, 'peek-req', 'peek-res', { id: 1, shop: '1/../x', item: '2' })).entry, null);
   assert.deepEqual((await once(gm, 'peek-search-req', 'peek-search-res', { id: 2, keyword: 'a', page: -1 })).items, []);
+  assert.deepEqual((await once(gm, 'peek-search-req', 'peek-search-res', { id: 3, keyword: '   ', page: 0 })).items, []);
   assert.equal(calls, 0);
+});
+
+test('a blocked search_items API is answered from BigGo Mall and Bid results without hitting Shopee', async () => {
+  const urls = [];
+  const gm = (o) => {
+    urls.push(o.url);
+    const isMall = o.url.includes('c[]=tw_mall_shopeemall');
+    const list = isMall
+      ? [
+        { oid: '10.100', title: 'Mall A', origin_image: 'https://cf.shopee.tw/file/hash_mall_a', is_offline: false },
+        { oid: '99.999', title: 'Offline', origin_image: 'https://cf.shopee.tw/file/hash_off', is_offline: true },
+        { oid: '20.200', title: 'Shared', origin_image: 'https://cf.shopee.tw/file/hash_shared_tn', is_offline: false },
+      ]
+      : [
+        { oid: '30.300', title: 'Bid B', image: 'https://img2.biggo.com/190x,sig/https://down-tw.img.susercontent.com/file/hash_bid_b.jpg', is_offline: false },
+        { oid: '20.200', title: 'Shared dup', origin_image: 'https://cf.shopee.tw/file/hash_shared', is_offline: false },
+        { oid: 'not-an-id', title: 'Bad OID', origin_image: 'https://cf.shopee.tw/file/hash_bad', is_offline: false },
+      ];
+    o.onload({ status: 200, responseText: biggoSearchHtml(list) });
+  };
+  const { ctx } = load({ path: '/search', gm, fetch: respond(BLOCKED) });
+  const body = await (await ctx.window.fetch('/api/v4/search/search_items?keyword=usb%2Fc&limit=60&newest=0')).json();
+  assert.ok(urls.every((u) => u.startsWith('https://biggo.com.tw/s/usb%2Fc?')));
+  assert.deepEqual(
+    body.items.map((x) => ({ shopid: x.shopid, itemid: x.itemid, name: x.item_basic.name, image: x.item_basic.image })),
+    [
+      { shopid: 10, itemid: 100, name: 'Mall A', image: 'hash_mall_a' },
+      { shopid: 30, itemid: 300, name: 'Bid B', image: 'hash_bid_b' },
+      { shopid: 20, itemid: 200, name: 'Shared', image: 'hash_shared' },
+    ],
+  );
+  assert.equal(body.query_rewrite, null);
+  assert.equal(ctx.document.documentElement.dataset.peekNoPrice, '1');
+  assert.deepEqual(JSON.parse(ctx.sessionStorage.getItem('peek:10.100')), {
+    name: 'Mall A',
+    image: 'https://down-tw.img.susercontent.com/file/hash_mall_a',
+  });
+});
+
+test('caps search_items below Shopee\'s 40-item logged-out login prompt threshold', async () => {
+  const make = (prefix) => Array.from({ length: 25 }, (_, i) => ({
+    oid: `${prefix}.${i + 1}`,
+    title: `Item ${prefix}-${i}`,
+    origin_image: `https://cf.shopee.tw/file/h_${prefix}_${i}`,
+    is_offline: false,
+  }));
+  const gm = (o) => o.onload({
+    status: 200,
+    responseText: biggoSearchHtml(o.url.includes('tw_mall_shopeemall') ? make(1) : make(2)),
+  });
+  const { ctx } = load({ path: '/search', gm, fetch: respond(BLOCKED) });
+  const body = await (await ctx.window.fetch('/api/v4/search/search_items?keyword=usb&limit=60&newest=0')).json();
+  assert.equal(body.items.length, 35);
+});
+
+test('dot-only search keyword does not normalize BigGo path to root', async () => {
+  const urls = [];
+  const gm = (o) => {
+    urls.push(o.url);
+    o.onload({ status: 200, responseText: biggoSearchHtml([]) });
+  };
+  const { replies } = load({ gm });
+  await replies('peek-search-req', 'peek-search-res', { id: 9, keyword: '..', page: 1 });
+  assert.ok(urls.length > 0 && urls.every((u) => u.startsWith('https://biggo.com.tw/s/%2E%2E?') && u.includes('&p=2')));
 });
 
 test('a blocked product page is answered from the LINE entry', async () => {

@@ -2,7 +2,7 @@
 
 [English](README.md) | **繁體中文** | [简体中文](README.zh-CN.md)
 
-不登入也能看蝦皮台灣（shopee.tw）商品頁的油猴腳本。商品用蝦皮原生版面顯示，標題下方附 BigGo 參考價。單一檔案、沒有相依套件、不追蹤使用者。
+不登入也能看蝦皮台灣（shopee.tw）商品頁與站內搜尋第 1 頁的油猴腳本。商品與搜尋都用蝦皮原生版面顯示，商品標題下方附 BigGo 參考價。單一檔案、沒有相依套件、不追蹤使用者。
 
 [![用 Tampermonkey 安裝](https://img.shields.io/badge/%E5%AE%89%E8%A3%9D-Tampermonkey-00485B?logo=tampermonkey&logoColor=white)](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/shopee-peek.user.js)
 [![check](https://github.com/YTsnipers/shopee-peek/actions/workflows/check.yml/badge.svg)](https://github.com/YTsnipers/shopee-peek/actions/workflows/check.yml)
@@ -22,7 +22,7 @@
 | 商品規格表、商品描述 | 運送方式與運費 |
 | 賣場名稱、回應率、粉絲數 | 即時價格（BigGo 價格可能落後） |
 | 各規格 BigGo 參考價，隨選取的規格切換 | 搜尋第 2 頁以後、搜尋結果的價格 |
-| 站內搜尋第 1 頁（10 筆，含圖片與標題）；目前可能失效，見「限流」 | |
+| 站內搜尋第 1 頁（最多 35 筆，含圖片與標題） | |
 
 銷量、評價、運送是蝦皮伺服器對未登入訪客直接移除的，目前找不到其他來源。BigGo 沒收錄的商品會顯示「查無價格」。
 
@@ -62,7 +62,7 @@ sequenceDiagram
 2. `get_pc` 被擋時，用 LINE 內建瀏覽器的 User-Agent 重抓同一個商品頁。這個版本內嵌與 `get_pc` 同格式的商品資料，腳本把它交給蝦皮前端渲染
 3. 從 `get_shop_base` 補上賣場資訊，其他被擋的 API 回空資料，並丟棄跳往 `/verify/` 的跳轉
 4. 向 BigGo 查各規格價格，顯示在標題下方
-5. 搜尋被擋時，讀取搜尋頁的 `ItemList` 結構化資料，餵給蝦皮原生搜尋頁
+5. 搜尋被擋時，向 BigGo 查詢蝦皮商城與拍賣商品，餵給蝦皮原生搜尋頁
 
 登入狀態下蝦皮 API 不會回 `90309999`，腳本不替換任何資料。
 
@@ -75,10 +75,10 @@ sequenceDiagram
 | 執行範圍 | 只在 `https://shopee.tw/*` 執行（`@match`） |
 | 權限 | 只要求 `GM_xmlhttpRequest`，而且只能連 `shopee.tw` 與 `biggo.com.tw`（`@connect`） |
 | 你的 cookie | 經 Tampermonkey 發出的請求一律不帶 cookie。只有賣場資訊（`get_shop_base`）在頁面內用蝦皮自己的 cookie 呼叫，和蝦皮前端平常發的請求相同 |
-| 送到第三方的資料 | BigGo 會收到你正在看的商品 ID、商品名稱和你的 IP。帳號、cookie、瀏覽紀錄都不會送出 |
+| 送到第三方的資料 | BigGo 會收到你正在看的商品 ID、商品名稱（或搜尋關鍵字）和你的 IP。帳號、cookie、瀏覽紀錄都不會送出 |
 | 程式碼來源 | 單一檔案，沒有相依套件、沒有建置步驟，不下載遠端程式碼，沒有分析或追蹤 |
 | 寫進頁面的外部資料 | BigGo 與蝦皮回傳的文字一律用 `textContent` 寫入，不會當成 HTML 解析 |
-| 頁面與腳本的溝通 | 透過 `document` 事件。任何頁面上的腳本都能發這些事件，所以腳本先驗證參數（商品 ID 必須是數字、頁碼必須是非負整數）才發請求 |
+| 頁面與腳本的溝通 | 透過 `document` 事件。任何頁面上的腳本都能發這些事件，所以腳本先驗證參數（商品 ID 必須是數字、關鍵字不可空白、頁碼必須是非負整數）才發請求 |
 | 自動更新 | Tampermonkey 從本 repo 的 `main` 分支更新，等於信任這個 repo 的維護者。不想自動更新，可以在 Tampermonkey 關掉這支腳本的「檢查更新」 |
 
 會改變網站行為的地方：
@@ -96,7 +96,7 @@ sequenceDiagram
 |---|---|---|
 | 還是跳到登入頁 | Tampermonkey 還不能執行使用者腳本，或蝦皮改版 | 檢查安裝第 2 步；已經打開就開 issue |
 | 只出現標題、圖片、價格的精簡卡片 | 蝦皮對你的 IP 限流，拿不到完整商品資料 | 等一段時間再重新整理 |
-| 搜尋一律顯示「找不到結果」 | 蝦皮擋下搜尋頁，Console 出現 `[Shopee Peek] 蝦皮擋下搜尋頁（HTTP 403）` | 見下方「限流」 |
+| 搜尋一律顯示「找不到結果」 | BigGo 沒回傳搜尋結果，Console 出現 `[Shopee Peek] BigGo 搜尋失敗（HTTP ...）` | 稍後再試；若仍是 v0.6.0 舊版請更新至 v0.7.0 以上 |
 | 標題下方顯示「查無價格」 | BigGo 沒收錄這個商品 | 不用處理，頁面其他部分正常 |
 | 蝦皮要求驗證碼，頁面卻一直沒出現 | 腳本會丟棄所有跳往 `/verify/` 的頁內跳轉，登入時也一樣 | 這次瀏覽先停用腳本 |
 
@@ -109,13 +109,12 @@ sequenceDiagram
 | 路徑 | 被限流時 | 畫面 |
 |---|---|---|
 | 商品資料（LINE User-Agent） | 回 HTTP 200，但內嵌資料的 `cachedMap` 是空的 | 顯示 BigGo 精簡卡，不是完整商品頁；Console 出現 `[Shopee Peek] LINE 版回傳空資料` |
-| 搜尋（社群預覽 User-Agent） | `facebookexternalhit`、`Twitterbot`、`Googlebot` 都回 HTTP 403 + `90309999` | 搜尋頁顯示「找不到結果」；Console 出現 `[Shopee Peek] 蝦皮擋下搜尋頁（HTTP 403）` |
+| 搜尋（BigGo，v0.7.0+） | 不再請求 `shopee.tw/search`；舊版社群預覽 User-Agent（`facebookexternalhit`、`Twitterbot`、`Googlebot`）已被蝦皮封鎖，固定回 HTTP 403 + `90309999` | 由 BigGo 取得最多 35 筆結果，不消耗蝦皮 IP 額度；若 BigGo 回非 200，Console 出現 `[Shopee Peek] BigGo 搜尋失敗（HTTP ...）` |
 | 首頁推薦 | 蝦皮回空資料，不是腳本造成的 | 限流範圍擴大時，首頁「每日新發現」也會變空 |
 
-- 觸發與解除：先前的測試約 10 分鐘內開 8 次商品頁就觸發，約 30 分鐘後解除。另一次測試停用 65 分鐘後，商品頁仍是精簡卡、搜尋仍是「找不到結果」，首頁推薦已恢復。再下一次測試停用約 1.5 小時後，商品頁已恢復完整；搜尋從被擋起算超過 3 小時，仍回 HTTP 403 + `90309999`。之後一次測試停用約 2.5 小時，商品頁兩次都完整載入，首頁推薦也有資料；那次沒測搜尋。
-- 推測（未驗證）：搜尋可能不是暫時限流，而是蝦皮封掉了腳本搜尋用的社群預覽 User-Agent。依據是商品頁 1.5 小時內就恢復，搜尋超過 3 小時仍被擋。如果之後一直回 403，搜尋功能就等於失效。
+- 觸發與解除：先前的測試約 10 分鐘內開 8 次商品頁就觸發，約 30 分鐘後解除。另一次測試停用 65 分鐘後，商品頁仍是精簡卡、舊版社群預覽搜尋仍回 403，首頁推薦已恢復。再下一次測試停用約 1.5 小時後，商品頁已恢復完整，但舊版社群預覽搜尋超過 3 小時仍回 HTTP 403 + `90309999`（確認蝦皮直接封鎖該類 User-Agent，因此 v0.7.0 起搜尋改走 BigGo）。之後一次測試停用約 2.5 小時，商品頁兩次都完整載入，首頁推薦也有資料。
 - 手動測試要間隔，不要連續開很多商品。
-- 商品頁被限流後，等 30 分鐘到 2 小時再試。搜尋見上一條推測。
+- 商品頁被限流後，等 30 分鐘到 2 小時再試。
 
 ## 給 AI 助手與 coding agent
 

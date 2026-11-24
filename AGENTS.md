@@ -11,7 +11,7 @@ The file runs in Tampermonkey's sandbox and injects `page()` into the page as an
 | Sandbox (file top level) | `peek-req` / `peek-search-req` listeners, BigGo lookups, price box, fallback card | `GM_xmlhttpRequest` with a custom User-Agent and no cookies, to `@connect` hosts | patch the page's `fetch`, `XMLHttpRequest`, `history` |
 | Page (`page()`) | `fetch` / XHR / `history` hooks, response rewriting | patch Shopee's globals; call Shopee APIs with the user's cookies | use `GM_*`; reference anything outside `page()`, because it is serialized with `${page}` |
 
-The two sides talk through `document` CustomEvents whose `detail` is a JSON string, matched by `id`: `peek-req` → `peek-res`, `peek-search-req` → `peek-search-res`. Every request event gets exactly one reply, including on validation failure, network error and timeout; Shopee's pending request waits on that reply. Any page script can fire these events, so the sandbox validates input (numeric ids, non-negative integer page) before it sends a request.
+The two sides talk through `document` CustomEvents whose `detail` is a JSON string, matched by `id`: `peek-req` → `peek-res`, `peek-search-req` → `peek-search-res`. Every request event gets exactly one reply, including on validation failure, network error and timeout; Shopee's pending request waits on that reply. Any page script can fire these events, so the sandbox validates input (numeric ids, non-empty keyword, non-negative integer page) before it sends a request.
 
 Each of these has one supported way; a new request or network call uses it instead of a hand-written listener:
 
@@ -44,10 +44,10 @@ Each of these has one supported way; a new request or network call uses it inste
 
 2. Logged out, in a separate browser profile with Tampermonkey, open a product from a Google result: title, gallery, variants, description and shop details render, and the price box follows the selected variant.
 3. Click through to another product inside Shopee (client-side navigation): the price box switches to the new product.
-4. Search a keyword: page 1 shows 10 results with images, no prices and no paginator.
+4. Search a keyword: page 1 shows up to 35 results with images, no prices and no paginator.
 5. Logged in: product and search pages match what you see with the script disabled.
 
-Steps 2 to 5 hit Shopee from the user's own IP and spend the quota they browse with. The product and search routes have separate quotas; the measured limits and recovery times live only in the README's "Rate limiting" section, so read them there. Cover a change with an offline test first; tell the user before any live request and keep it to the steps the change touches. Loading many products in a short time triggers `/verify/captcha?scene=crawler_item` and rate limiting, so space manual tests out. To install a local edit, serve the file over local HTTP and open the `.user.js` URL so Tampermonkey runs its install flow; pasting into Tampermonkey's editor sometimes fails to save.
+Steps 2 to 5 hit Shopee from the user's own IP and spend the quota they browse with (search data itself comes from BigGo, so searching does not spend Shopee's product quota, though loading `/search` still loads Shopee's page shell). The measured limits and recovery times live only in the README's "Rate limiting" section, so read them there. Cover a change with an offline test first; tell the user before any live request and keep it to the steps the change touches. Loading many products in a short time triggers `/verify/captcha?scene=crawler_item` and rate limiting, so space manual tests out. To install a local edit, serve the file over local HTTP and open the `.user.js` URL so Tampermonkey runs its install flow; pasting into Tampermonkey's editor sometimes fails to save. To check whether an older Tampermonkey copy is running alongside a test copy, fire `peek-search-req` with `page: -1` (no network request) and verify it gets only one reply.
 
 When reporting a live test, open with a one-sentence verdict in plain language, then keep two causes apart: the script failed, or Shopee blocked or rate-limited the route (HTTP 403 with `90309999`, or HTTP 200 with an empty `cachedMap`). A rate-limited run proves nothing about the normal path; say which steps it left untested. Tell the causes apart from the `[Shopee Peek]` console lines (each blocked route logs its status), not by calling Shopee with curl: that spends the same quota.
 
@@ -63,7 +63,7 @@ A live test that shows something new about Shopee's limits (a status code, a tri
 | Rewritten responses keep the shape components read | `tests/`: stub-shape test for `search_suggestion`; new stubs need their own case |
 | Don't spend the user's IP quota on checks a fixture can do | Judgment: this file, "Verify a change" |
 | Live-test reports lead with a verdict and separate script failure from Shopee blocking | Judgment: this file, "Verify a change" |
-| A route Shopee blocks says so in the console with its status | `tests/`: blocked-search log test; a new route needs its own case |
+| A route an external host blocks says so in the console with its status | `tests/`: blocked-search log test; a new route needs its own case |
 | New observations about Shopee's limits go into all three READMEs' "Rate limiting" section | Judgment: this file, "Verify a change"; AGENTS.md links there instead of copying the numbers |
 
 ## Release

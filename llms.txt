@@ -7,7 +7,7 @@ Behaviour:
 - Runs only on `https://shopee.tw/*`. Logged-in sessions get no data replaced, because Shopee doesn't send them the block code.
 - Product data comes from the same product page fetched with the LINE in-app browser User-Agent; it carries the same structure as the `get_pc` API minus price, reviews, shop and shipping. Shop details are filled from `get_shop_base`.
 - Prices come from BigGo, a third-party price-comparison site. They are reference prices, not live, and switch with the selected variant. Items BigGo hasn't indexed show 「查無價格」.
-- Search results (10 items, title and image, no price) come from the search page's `application/ld+json` `ItemList`, fetched with a link-preview bot User-Agent. Shopee's frontend forbids pagination for logged-out users, so there is only page 1.
+- Search results (up to 35 items, title and image, no price) come from BigGo (`tw_mall_shopeemall` and `tw_bid_shopee` interleaved), so searching does not hit Shopee's blocked social-preview route or spend Shopee IP quota. Shopee's frontend forbids pagination for logged-out users, so there is only page 1.
 - When Shopee rate-limits the IP and the LINE fetch returns nothing, a full-screen card shows title, image and BigGo price instead.
 - Never available logged out: units sold, ratings and reviews, shipping. Shopee removes them server-side.
 - Side effects: sets the `language=zhHant` cookie if none exists; hides the homepage popup banner; drops every in-page redirect to a URL containing `/verify/`, including captcha pages and when logged in; routes every XHR to `/api/` through `fetch`.

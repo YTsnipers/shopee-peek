@@ -67,14 +67,29 @@ LINE 版資料的限制：`product_price` 為 `null` 且列在 `removed_fields`�
 | 點規格要換價格 | — | `history_id` 結尾等於蝦皮 `model_id`，由選中的按鈕換算規格索引後對應 |
 | 登入使用者的價格被蓋掉 | 無條件替換 `get_pc` | 只在回應 `90309999` 時替換 |
 
-## 7. 測試方法
+## 7. 站內搜尋與繞開蝦皮封鎖（v0.6 → v0.7）
+
+| 問題 | 原因 | 解法 |
+|---|---|---|
+| 社群預覽版搜尋永久 403 | v0.6 用 `facebookexternalhit` 抓 `/search` 的 `ItemList`；後來 `facebookexternalhit`、`Twitterbot`、`Googlebot` 全數回 HTTP 403 + `90309999`，商品頁恢復後超過 3 小時仍不解除 | 放棄請求 `shopee.tw/search`，改走已在 `@connect` 內的 `biggo.com.tw/s/...` 取得蝦皮商品，完全不消耗蝦皮 IP 額度 |
+| 商品限流備援卡在限流時繼續戳蝦皮 | `showFallback` 缺快取時連打 3 次 `shopee.tw/search`（全拿 403），之後才查 BigGo | 移除 `findInShopeeSearch`，直接由 BigGo 搜尋頁補齊標題與圖片 |
+| BigGo 同時篩商城與拍賣時漏掉個人賣家 | 單一網址帶 `m=cp&c[]=tw_bid_shopee&c[]=tw_mall_shopeemall` 時，BigGo 會把商城全部排在拍賣前面（例如搜「二手漫畫」前 25 筆全是商城書局） | 拆成 `tw_mall_shopeemall` 與 `tw_bid_shopee` 兩個請求並行抓取，再一對一交錯合併、以 `oid` 去重 |
+| BigGo Next.js 串流跨 `<script>` 切斷與正規表示式回溯風險 | `ssrData` 嵌在 `self.__next_f.push([1,"..."])` 內，單筆 JSON 字串常被切成多段 `<script>`；對 125 KB 字串用 `(?:\\.|[^"\\])*` 有回溯爆 stack 風險 | 先以線性掃描拼回所有 flight 字串片段，再用括號深度配對切出 `ssrData` 物件 |
+| 關鍵字為 `..` 時跳回 BigGo 首頁 | `encodeURIComponent('.')` 不會編碼點號，`/s/..` 被瀏覽器正規化成 `/` | 將 `.` 額外轉為 `%2E` |
+| 塞入搜尋結果後畫面仍可能判定無結果或跳登入提示 | 蝦皮前端 normalizer 以 `t.query_rewrite \|\| {...}` 補 `FEQueryWriteStatus`，傳 `{}`（truthy）會讓狀態變 `undefined`；另外未登入且筆數 `>= 40` 時前端會顯示「登入以查看更多」按鈕 | `query_rewrite` 改傳 `null` 讓蝦皮自行填入 `NORMAL`；單頁上限設為 35 筆（7 排 × 5 欄，低於 40 筆門檻） |
+
+## 8. 測試方法
 
 - 新版 Chromium 禁止對預設設定檔開啟遠端除錯埠，改為另開獨立設定檔的除錯模式瀏覽器，透過 Chrome DevTools Protocol 錄製請求、回應與畫面
 - 為了測試真實的 Tampermonkey 行為，只複製 Tampermonkey 的擴充功能資料到獨立設定檔
 - 短時間大量載入商品頁會觸發 `/verify/captcha?scene=crawler_item`，之後改用模擬（直接 `pushState` 到 `/verify/`）測試站內換頁
 - 編輯器貼上更新失敗時（Dashboard 顯示的大小沒變），改用本機 HTTP 伺服器提供 `.user.js`，讓 Tampermonkey 走安裝流程
+- 自動化瀏覽器（CDP）實測踩過的坑：
+  - `Page.addScriptToEvaluateOnNewDocument` 執行時 `<html>`（`document.documentElement`）尚未建立，直接 append 會失敗；必須等 `MutationObserver` 見到 `documentElement` 才啟動，行為才等同 Tampermonkey 的 `@run-at document-start`
+  - 在 `https://shopee.tw` 頁面內 `fetch('http://127.0.0.1:...')` 會觸發 Chromium 區域網路存取權限彈窗而中斷自動化；頂層直接導覽 `http://127.0.0.1:<port>/shopee-peek.user.js` 則不會跳權限框，且能直接喚起 Tampermonkey 的更新確認頁
+  - 若瀏覽器設定檔已裝有舊版 Tampermonkey 腳本，再用 CDP 注入新版腳本會造成兩個沙盒同時監聽 `peek-search-req`：舊版撞 403 秒回空陣列，搶在新版 BigGo 回傳前把頁面的單次 `ask()` 結案，導致 `sessionStorage` 明明寫入 50 筆資料、畫面卻顯示「找不到結果」。在 Console 對 `peek-search-req` 送一筆不發網路請求的 `{ page: -1 }`，檢查回覆數是否大於 1，就能零額度抓出重複掛載
 
-## 8. 判斷錯誤與修正
+## 9. 判斷錯誤與修正
 
 | 原本的判斷 | 實際 |
 |---|---|
@@ -83,3 +98,5 @@ LINE 版資料的限制：`product_price` 為 `null` 且列在 `removed_fields`�
 | Brave 擋掉安全模組回報才被判成機器人 | 無關 |
 | 使用者瀏覽器有快取，蝦皮 JS 比腳本先跑 | 實際原因是站內換頁 |
 | 價格框不見是 VPN 擋了 BigGo | Console 顯示價格有抓到，是被裁切容器藏起來 |
+| 搜尋頁超過 3 小時仍 403，可能只是限流更久 | 蝦皮直接封死社群預覽 UA；改從 BigGo 取商城與拍賣結果即可繞過且零蝦皮額度消耗 |
+| 實測搜尋仍顯示「找不到結果」，以為新解析或前端結構壞掉 | 瀏覽器內舊版 Tampermonkey 腳本同時在跑，403 快失敗搶先回空陣列把請求結案 |

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0
+
+- 修復站內搜尋：蝦皮封鎖社群預覽 User-Agent（HTTP 403 + `90309999`）導致搜尋一律顯示「找不到結果」；改由 BigGo 並行取得蝦皮商城（`tw_mall_shopeemall`）與蝦皮拍賣（`tw_bid_shopee`）搜尋結果並交錯合併，單頁最多顯示 35 筆（7 排 × 5 欄，低於未登入 40 筆的登入提示門檻），不再請求 `shopee.tw/search` 或消耗蝦皮 IP 額度
+- 修正搜尋回應 `query_rewrite` 傳 `{}` 導致蝦皮前端 `FEQueryWriteStatus` 為 `undefined`；改傳 `null` 由前端自動帶入正常結果狀態
+- 移除商品頁限流備援卡對 `shopee.tw/search` 的無效重試，直接由 BigGo 補齊商品標題與圖片，並在非同步等待後檢查畫面是否仍屬於該商品
+
 ## 0.6.0
 
 - 新增站內搜尋：未登入時 `search_items` 被擋，改用社群預覽版取得搜尋結果，轉成蝦皮格式餵給原生搜尋頁（每頁 10 筆，含圖與標題）

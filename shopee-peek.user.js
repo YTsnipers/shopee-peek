@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         Shopee Peek
-// @version      0.6.0
+// @version      0.7.0
 // @namespace    https://github.com/YTsnipers/shopee-peek
 // @license      MIT
 // @homepageURL  https://github.com/YTsnipers/shopee-peek
 // @updateURL    https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/shopee-peek.user.js
 // @downloadURL  https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/shopee-peek.user.js
-// @description  不登入看蝦皮商品頁：用 LINE 內建瀏覽器的 UA 取得商品資料，餵給蝦皮原生頁面，並擋下錯誤頁跳轉
+// @description  不登入看蝦皮商品頁與站內搜尋：商品資料取自 LINE 版頁面，價格與搜尋結果取自 BigGo，由蝦皮原生介面顯示
 // @match        https://shopee.tw/*
 // @run-at       document-start
 // @grant        GM_xmlhttpRequest
@@ -88,14 +88,16 @@ const fetchBigGoHit = async (shop, item, link) => {
   if (!t) return null;
   const a = new DOMParser().parseFromString(t, 'text/html').querySelector(`a[href*="id=${shop}.${item}&"]`);
   if (!a) return null;
-  const image = a.querySelector('img')?.getAttribute('src') || null;
+  const imgEl = a.querySelector('img');
+  const image = imgEl?.getAttribute('src') || null;
+  const name = imgEl?.getAttribute('alt') || null;
   const foreign = (n) => [...n.querySelectorAll('a[href*="/r/?i="]')].some((x) => !x.getAttribute('href').includes(`id=${shop}.${item}&`));
   let el = a;
   for (let i = 0; el && i < 8 && !foreign(el); i++, el = el.parentElement) {
     const price = [...el.querySelectorAll('*')].filter((n) => !n.children.length).map((n) => n.textContent.trim()).find((x) => /^\$[\d,]+$/.test(x));
-    if (price) return { price, image };
+    if (price) return { price, image, name };
   }
-  return { price: null, image };
+  return { price: null, image, name };
 };
 
 const fetchSinglePrice = async (shop, item, link) => (await fetchBigGoHit(shop, item, link))?.price || null;
@@ -146,7 +148,7 @@ const showFallback = async (shop, item) => {
     if (!alive()) clearInterval(watch), box.remove();
   }, 500);
   const cached = sessionStorage.getItem(`peek:${shop}.${item}`);
-  const found = cached ? JSON.parse(cached) : title ? await findInShopeeSearch(title, shop, item) : null;
+  const found = cached ? JSON.parse(cached) : null;
   if (found) {
     nameEl.textContent = found.name;
     img.src = found.image;
@@ -154,6 +156,7 @@ const showFallback = async (shop, item) => {
   const name = found?.name || title;
   big.href = `https://biggo.com.tw/s/${encodeURIComponent(name)}`;
   const vars = await fetchVariants(shop, item);
+  if (!alive()) return;
   const live = vars && (vars.filter((v) => !v.offline).length ? vars.filter((v) => !v.offline) : vars);
   if (live) {
     const ps = live.map((v) => v.price);
@@ -162,22 +165,11 @@ const showFallback = async (shop, item) => {
     noteEl.textContent = live.map((v) => `${v.title} ${fmt(v.price)}`).join('　');
   }
   const hit = name ? await fetchBigGoHit(shop, item, big.href) : null;
+  if (!alive()) return;
   if (!live) priceEl.textContent = hit?.price || '查無價格';
+  if (!found && hit?.name) nameEl.textContent = hit.name;
   if (!found && hit?.image) img.src = hit.image;
   if (!img.getAttribute('src')) img.remove();
-};
-
-const findInShopeeSearch = async (keyword, shop, item) => {
-  for (let i = 0; i < 3; i++) {
-    const hit = await searchOnce(keyword, shop, item);
-    if (hit) return hit;
-  }
-  return null;
-};
-
-const searchOnce = async (keyword, shop, item) => {
-  const r = await gm(`https://shopee.tw/search?keyword=${encodeURIComponent(keyword)}`, BOT_UA);
-  return (r && parseItemList(r.responseText).find((x) => x.url.endsWith(`i.${shop}.${item}`))) || null;
 };
 
 const selectedModelId = () => {
@@ -270,29 +262,73 @@ setInterval(() => {
   box.querySelector('a').href = priceState.link;
 }, 300);
 
-const BOT_UA = 'facebookexternalhit/1.1';
-const parseItemList = (html) => {
-  const raw = [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('script[type="application/ld+json"]')]
-    .map((s) => s.textContent).find((x) => x.includes('"ItemList"'));
-  let list = [];
+const biggoItems = (html) => {
   try {
-    list = raw ? JSON.parse(raw).itemListElement : [];
-  } catch {
+    let stream = '';
+    const pushRe = /self\.__next_f\.push\(\[\s*1\s*,\s*"/g;
+    let m;
+    while ((m = pushRe.exec(html))) {
+      let i = m.index + m[0].length;
+      for (let esc = false; i < html.length; i++) {
+        if (esc) esc = false;
+        else if (html[i] === '\\') esc = true;
+        else if (html[i] === '"') break;
+      }
+      stream += JSON.parse(html.slice(m.index + m[0].length - 1, i + 1));
+      pushRe.lastIndex = i + 1;
+    }
+    const key = '"ssrData":{';
+    const s = stream.indexOf(key);
+    if (s < 0) return [];
+    const at = s + key.length - 1;
+    let depth = 0, inStr = false, esc = false, i = at;
+    for (; i < stream.length; i++) {
+      const c = stream[i];
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = !inStr;
+      else if (!inStr && (c === '{' ? (++depth, false) : c === '}' && !--depth)) break;
+    }
+    const list = JSON.parse(stream.slice(at, i + 1)).list;
+    if (!Array.isArray(list)) return [];
+    return list.flatMap((x) => {
+      if (x?.is_offline || x?.is_notfound || typeof x?.title !== 'string' || !/^\d+\.\d+$/.test(x.oid)) return [];
+      const im = String(x.origin_image || x.image || '').match(/\/file\/([a-zA-Z0-9_-]+?)(?:_tn)?(?:\.[a-zA-Z0-9]+)?(?:[?#]|$)/);
+      return im ? [{ name: x.title, image: `https://down-tw.img.susercontent.com/file/${im[1]}`, url: `https://shopee.tw/product-i.${x.oid}` }] : [];
+    });
+  } catch (err) {
+    console.info('[Shopee Peek] BigGo 搜尋資料解析失敗', err);
     return [];
   }
-  return Array.isArray(list) ? list.filter((x) => typeof x?.name === 'string' && typeof x.image === 'string' && /i\.\d+\.\d+$/.test(x.url)) : [];
+};
+
+const fetchBigGoStore = async (keyword, store, page) => {
+  const q = encodeURIComponent(keyword.trim()).replace(/\./g, '%2E');
+  const r = await gm(`https://biggo.com.tw/s/${q}?m=cp&c[]=${store}${page > 0 ? `&p=${page + 1}` : ''}`);
+  if (r && r.status !== 200) console.info(`[Shopee Peek] BigGo 搜尋失敗（HTTP ${r.status}）`);
+  return r?.status === 200 ? biggoItems(r.responseText) : [];
 };
 
 const fetchSearchPage = async (keyword, page) => {
-  const r = await gm(`https://shopee.tw/search?keyword=${encodeURIComponent(keyword)}&page=${page}`, BOT_UA);
-  if (r && r.status !== 200) console.info(`[Shopee Peek] 蝦皮擋下搜尋頁（HTTP ${r.status}），疑似限流或封鎖`);
-  return r ? parseItemList(r.responseText) : [];
+  const lists = await Promise.all(['tw_mall_shopeemall', 'tw_bid_shopee'].map((s) => fetchBigGoStore(keyword, s, page)));
+  const seen = new Set();
+  const out = [];
+  const max = Math.max(...lists.map((l) => l.length));
+  for (let i = 0; i < max; i++) {
+    for (const l of lists) {
+      const it = l[i];
+      if (it && !seen.has(it.url)) {
+        seen.add(it.url);
+        out.push(it);
+      }
+    }
+  }
+  return out;
 };
 
 serve('peek-search-req', 'peek-search-res', { items: [] }, async ({ keyword, page }) => {
-  let items = [];
-  if (typeof keyword !== 'string' || !Number.isInteger(page) || page < 0) return { items };
-  for (let i = 0; i < 3 && !items.length; i++) items = await fetchSearchPage(keyword, page);
+  if (typeof keyword !== 'string' || !keyword.trim() || !Number.isInteger(page) || page < 0) return { items: [] };
+  const items = await fetchSearchPage(keyword, page);
   for (const it of items) {
     const m = it.url.match(/i\.(\d+\.\d+)$/);
     if (m) sessionStorage.setItem(`peek:${m[1]}`, JSON.stringify({ name: it.name, image: it.image }));
@@ -361,7 +397,8 @@ const page = () => {
     const list = await getSearch(q.get('keyword') || '', page);
     if (!list.length) return null;
     document.documentElement.dataset.peekNoPrice = '1';
-    const items = list.map((it) => {
+    const capped = list.slice(0, limit > 0 ? Math.min(limit, 35) : 35);
+    const items = capped.map((it) => {
       const [, shopid, itemid] = it.url.match(/i\.(\d+)\.(\d+)$/).map(Number);
       const image = it.image.split('/').pop().replace(/_tn$/, '');
       const item_basic = {
@@ -372,8 +409,8 @@ const page = () => {
       };
       return { item_basic, itemid, shopid, adsid: null, campaignid: null, item_type: 0 };
     });
-    const total = list.length >= 10 ? limit * (page + 2) : limit * page + list.length;
-    return JSON.stringify({ error: null, total_count: total, total_ads_count: 0, nomore: list.length < 10, items, query_rewrite: {} });
+    const total = items.length >= 10 ? limit * (page + 2) : limit * page + items.length;
+    return JSON.stringify({ error: null, total_count: total, total_ads_count: 0, nomore: items.length < 10, items, query_rewrite: null });
   };
 
   const pdpBody = async (u) => {
