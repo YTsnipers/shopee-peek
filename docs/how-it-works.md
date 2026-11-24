@@ -22,8 +22,9 @@
 4. 其餘 `90309999` 回應改寫為 `{"error":0,"data":null}`，元件會讀取的欄位（如 `search_suggestion.queries`）補空陣列；導向 `/verify/` 的 `pushState` 一律丟棄
 5. 依 `button.selection-box-selected` 推算 `model_id`，於標題下方渲染對應價格
 6. LINE 版拿不到資料（多半是 IP 限流）時，蓋上全頁備援商品卡：標題與圖片取自搜尋快取或 BigGo，價格取自 BigGo
+7. 介面與請求封鎖：注入 `x-dns-prefetch-control: off` 關閉連結預解析，隱藏並移除頁首雜項（保留語言、註冊、登入與帳號）、搜尋框下方熱搜詞與全站頁尾的 `href`／`src`／`srcset`；在 `fetch`／`XHR`／`sendBeacon` 發送前直接攔截 `get_footer_layout`、`/backend/CMS/footer/`、`search_prefills`、`search_suggestion?bundle=popsearch`、`notification/*` 與外連子網域，另附 `filters.txt` 供 Brave Shields、uBlock Origin 或 AdGuard 於瀏覽器網路層攔截
 
-已登入時 API 不會回 `90309999`，腳本不替換任何資料。
+除上述無用區塊請求外，已登入時其餘 API 不會回 `90309999`，腳本不替換商品與搜尋資料。
 
 ## 限制
 

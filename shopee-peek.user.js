@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         Shopee Peek
-// @version      0.7.0
+// @version      0.8.0
 // @namespace    https://github.com/YTsnipers/shopee-peek
 // @license      MIT
 // @homepageURL  https://github.com/YTsnipers/shopee-peek
 // @updateURL    https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/shopee-peek.user.js
 // @downloadURL  https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/shopee-peek.user.js
-// @description  不登入看蝦皮商品頁與站內搜尋：商品資料取自 LINE 版頁面，價格與搜尋結果取自 BigGo，由蝦皮原生介面顯示
+// @description  不登入看蝦皮商品頁與站內搜尋：商品資料取自 LINE 版頁面，價格與搜尋結果取自 BigGo，由蝦皮原生介面顯示，並封鎖頁首雜項、搜尋框熱搜詞與頁尾及其連結與請求
 // @match        https://shopee.tw/*
 // @run-at       document-start
 // @grant        GM_xmlhttpRequest
@@ -347,10 +347,56 @@ const el = (tag, css, text) => {
   return n;
 };
 
+const HIDE_SEL = [
+  'nav.navbar > :first-child:not(.navbar__spacer):not(.navbar__links)',
+  '.navbar__link--sell',
+  '.navbar__links > li.navbar__link--help',
+  '.navbar__links > li:has(#notifications)',
+  '.navbar__links > li:has(a[href*="/notifications"])',
+  '.navbar__links > li:has(.icon-notification-2)',
+  '.navbar__links > li:has(a[href*="help.shopee"])',
+  '.header-with-search__search-section > form.shopee-searchbar ~ *',
+  '.shopee-searchbar-hints__search-prefill',
+  'footer',
+  '[role="contentinfo"]',
+].join(', ');
+
+const BLOCKED_LINK_HOSTS = /^(?:(?:seller|help)\.shopee\.tw|careers\.shopee\.com|(?:[\w-]+\.)?(?:facebook\.com|facebook\.net|instagram\.com|line\.me|linkedin\.com)|shopee\.(?:com\.(?:ar|my|br|mx)|sg|co\.(?:id|th)|vn|ph))$/i;
+
 const page = () => {
   const of = window.fetch;
   const STUB = { search_suggestion: { queries: [] }, search_user: { users: [] }, search_prefills: { items: [], ordered_prefills: [] } };
   const RAW = { 'experiment/config': { is_success: false }, 'experiment/performance': { is_success: true } };
+  const BLOCKED_HOSTS = /^(?:(?:seller|help)\.shopee\.tw|careers\.shopee\.com|(?:[\w-]+\.)?(?:facebook\.com|facebook\.net|instagram\.com|line\.me|linkedin\.com)|shopee\.(?:com\.(?:ar|my|br|mx)|sg|co\.(?:id|th)|vn|ph))$/i;
+  const BLOCKED_PATHS = /^\/(?:seller\/signup(?:\/|$)|web(?:\/|$)|user\/notifications(?:\/|$)|blog(?:\/|$))/;
+  const parseUrl = (u) => {
+    try {
+      return new URL(String(u), location.origin);
+    } catch {
+      return null;
+    }
+  };
+  const blockedHost = (u) => {
+    const p = parseUrl(u);
+    return Boolean(p && BLOCKED_HOSTS.test(p.hostname));
+  };
+  const blockedNav = (u) => {
+    const p = parseUrl(u);
+    if (!p) return false;
+    return BLOCKED_HOSTS.test(p.hostname) || (p.origin === location.origin && BLOCKED_PATHS.test(p.pathname));
+  };
+  const dropBody = (u) => {
+    const s = String(u);
+    if (blockedHost(s)) return '{}';
+    if (s.includes('/api/v4/pages/get_footer_layout')) return JSON.stringify({ error: 0, error_msg: null, data: { id: 1, name: '', pc: [], rw: [] } });
+    if (s.includes('/backend/CMS/footer/')) return JSON.stringify({ data: '' });
+    if (s.includes('/api/v4/search/search_prefills')) return JSON.stringify({ error: 0, error_msg: null, data: STUB.search_prefills });
+    if (s.includes('/api/v4/search/search_suggestion') && /[?&]bundle=popsearch(?:&|$)/.test(s)) return JSON.stringify({ error: 0, error_msg: null, data: STUB.search_suggestion });
+    if (s.includes('/api/v4/notification/get_activities')) return JSON.stringify({ error: 0, error_msg: null, data: { activities: [] } });
+    if (s.includes('/api/v4/notification/get_notifications')) return JSON.stringify({ error: 0, error_msg: null, data: { actions: [] } });
+    if (s.includes('/api/v4/notification/')) return JSON.stringify({ error: 0, error_msg: null, data: { item_cards: [] } });
+    return null;
+  };
   const empty = (u) => {
     const r = Object.keys(RAW).find((x) => String(u).includes(`/${x}`));
     if (r) return JSON.stringify(RAW[r]);
@@ -424,6 +470,8 @@ const page = () => {
 
   window.fetch = function (input, init) {
     const u = input?.url ?? String(input);
+    const dropped = dropBody(u);
+    if (dropped !== null) return Promise.resolve(json(dropped));
     return of.apply(this, arguments).then(async (r) => {
       if (!isApi(u)) return r;
       if (!blocked(await r.clone().text())) {
@@ -468,7 +516,7 @@ const page = () => {
       def('readyState', () => 4);
       for (const ev of ['readystatechange', ...events]) x.dispatchEvent(new ProgressEvent(ev));
     };
-    if (isApi(u)) {
+    if (isApi(u) || dropBody(u) !== null) {
       const init = { method, headers, credentials: x.withCredentials ? 'include' : 'same-origin' };
       if (!/^(GET|HEAD)$/i.test(method)) init.body = body;
       return window.fetch(u, init)
@@ -484,25 +532,120 @@ const page = () => {
     return os.call(x, body);
   };
 
+  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+    const ob = navigator.sendBeacon.bind(navigator);
+    navigator.sendBeacon = (u, data) => (dropBody(u) !== null ? true : ob(u, data));
+  }
+
+  if (typeof window.open === 'function') {
+    const oop = window.open;
+    window.open = function (u) {
+      if (u != null && blockedNav(u)) return null;
+      return oop.apply(this, arguments);
+    };
+  }
+
   for (const fn of ['pushState', 'replaceState']) {
     const orig = history[fn];
     history[fn] = function (s, t, url) {
-      if (url && String(url).includes('/verify/')) return;
+      if (url && (String(url).includes('/verify/') || blockedNav(url))) return;
       return orig.apply(this, arguments);
     };
   }
+
+  const scrubNode = (n) => {
+    if (!n || typeof n.tagName !== 'string') return;
+    const attr = n.tagName === 'LINK' ? 'href' : /^(?:SCRIPT|IFRAME|IMG)$/.test(n.tagName) ? 'src' : null;
+    if (attr && n[attr] && blockedHost(n[attr])) n.removeAttribute(attr);
+  };
+  if (typeof Node !== 'undefined') {
+    for (const fn of ['appendChild', 'insertBefore']) {
+      const orig = Node.prototype[fn];
+      Node.prototype[fn] = function (n) {
+        scrubNode(n);
+        return orig.apply(this, arguments);
+      };
+    }
+  }
 };
 
-const s = document.createElement('script');
-s.textContent = `(${page})();`;
-(document.head || document.documentElement).appendChild(s);
-s.remove();
+const disarm = () => {
+  for (const l of document.querySelectorAll('link[rel~="dns-prefetch"][href], link[rel~="preconnect"][href]')) {
+    try {
+      if (BLOCKED_LINK_HOSTS.test(new URL(l.getAttribute('href'), location.origin).hostname)) l.removeAttribute('href');
+    } catch {}
+  }
+  for (const box of document.querySelectorAll(HIDE_SEL)) {
+    for (const n of box.querySelectorAll('a[href], img[src], img[srcset], source[srcset], iframe[src]')) {
+      for (const a of ['href', 'src', 'srcset']) n.removeAttribute(a);
+      if (n.tagName === 'A') {
+        n.tabIndex = -1;
+        n.setAttribute('aria-hidden', 'true');
+      }
+    }
+  }
+};
 
-const css = document.createElement('style');
-css.textContent = `
-  div:has(> div > #HomePagePopupBannerSection), #HomePagePopupBannerSection { display: none !important; }
-  html[data-peek-no-price] a[href*="-i."] .text-shopee-primary { visibility: hidden !important; }
-  html[data-peek-no-price] .shopee-page-controller, html[data-peek-no-price] .shopee-mini-page-controller { display: none !important; }
-  html:has(#HomePagePopupBannerSection), body:has(#HomePagePopupBannerSection) { overflow: auto !important; }
-`;
-(document.head || document.documentElement).appendChild(css);
+let disarmPending = false;
+const scheduleDisarm = () => {
+  if (disarmPending) return;
+  disarmPending = true;
+  Promise.resolve().then(() => {
+    disarmPending = false;
+    disarm();
+  });
+};
+
+const boot = (root) => {
+  const meta = document.createElement('meta');
+  meta.httpEquiv = 'x-dns-prefetch-control';
+  meta.content = 'off';
+  root.appendChild(meta);
+
+  const s = document.createElement('script');
+  s.textContent = `(${page})();`;
+  root.appendChild(s);
+  s.remove();
+
+  const css = document.createElement('style');
+  css.textContent = `
+    div:has(> div > #HomePagePopupBannerSection), #HomePagePopupBannerSection { display: none !important; }
+    html[data-peek-no-price] a[href*="-i."] .text-shopee-primary { visibility: hidden !important; }
+    html[data-peek-no-price] .shopee-page-controller, html[data-peek-no-price] .shopee-mini-page-controller { display: none !important; }
+    html:has(#HomePagePopupBannerSection), body:has(#HomePagePopupBannerSection) { overflow: auto !important; }
+    ${HIDE_SEL} { display: none !important; }
+  `;
+  root.appendChild(css);
+
+  disarm();
+  if (typeof MutationObserver !== 'undefined' && document.documentElement) {
+    new MutationObserver(scheduleDisarm).observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['href', 'src', 'srcset'],
+    });
+  }
+};
+
+const rootNow = document.head || document.documentElement;
+if (rootNow) boot(rootNow);
+else if (typeof MutationObserver !== 'undefined') {
+  const mo = new MutationObserver(() => {
+    const r = document.head || document.documentElement;
+    if (r) {
+      mo.disconnect();
+      boot(r);
+    }
+  });
+  mo.observe(document, { childList: true });
+}
+
+for (const ev of ['click', 'auxclick']) {
+  document.addEventListener(ev, (e) => {
+    if (e.target?.closest?.(HIDE_SEL)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }, true);
+}

@@ -24,11 +24,12 @@ Each of these has one supported way; a new request or network call uses it inste
 
 ## Invariants
 
-- Act only on blocked responses, the ones where `blocked()` finds the standalone code `90309999`. Every other response, including all responses to logged-in users, passes through untouched.
-- A rewritten response keeps the shape Shopee's components read. Several components crash on `data: null`; `STUB` and `RAW` in `page()` hold the shapes they need. When neutralising a new endpoint, check which fields the component reads and add a stub.
+- Clutter endpoints tied to hidden UI (`dropBody()` in `page()`: `get_footer_layout`, `/backend/CMS/footer/`, `search_prefills`, `search_suggestion?bundle=popsearch`, `notification/*`, and blocked external/subdomain hosts) are answered locally before `fetch` hits the network. For every other endpoint, act only on blocked responses where `blocked()` finds the standalone code `90309999`, passing non-blocked responses through untouched.
+- A rewritten or short-circuited response keeps the shape Shopee's components read. Several components crash on `data: null` or render hardcoded fallbacks (e.g., `InformationBlockTW` falls back to static footer links unless `get_footer_layout` returns a truthy `data` with `pc: []`); `STUB`, `RAW` and `dropBody()` in `page()` hold the shapes they need. When neutralising a new endpoint, check which fields the component reads and add a stub.
+- Hidden clutter selectors (`HIDE_SEL`) must never hide `.navbar__link--auth`, `.navbar__link--account`, or the language switcher (note: Shopee reuses `.navbar__link--notification` on the language switcher `<li>`, so target `#notifications` / `a[href*="/notifications"]` / `.icon-notification-2` instead of the bare class), nor remove React-owned container nodes directly (strip `href`/`src`/`srcset` instead so React 19 unmount never throws `removeChild`).
 - The price box and the fallback card belong to one product. `claim(shop, item)` is the only owner of which product is on screen; its `alive()` is false once the URL leaves the product or a newer product claims the screen.
 - UI strings are Traditional Chinese. Console messages start with `[Shopee Peek]`; bug reports quote them.
-- Grants stay at `GM_xmlhttpRequest` with `@connect shopee.tw` and `biggo.com.tw`. A new host needs its own `@connect` line.
+- Grants stay at `GM_xmlhttpRequest` with `@connect shopee.tw` and `biggo.com.tw`. A new host needs its own `@connect` line. Companion network rules live in `filters.txt` using standard ABP/uBlock/AdGuard syntax compatible with Brave, Chrome and Ego Lite.
 
 ## Hard-coded to Taiwan
 

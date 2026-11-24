@@ -219,3 +219,133 @@ test('a late fallback card for the previous product is not shown on the next one
   await new Promise((r) => setTimeout(r, 150));
   assert.equal(mounted.filter((n) => n.id === 'peek-fallback').length, 0);
 });
+
+// Rule: blocked header/searchbar-hotword/footer APIs and hosts never reach the network and return safe shapes.
+test('drops footer, prefill, popsearch and notification requests before hitting network', async () => {
+  let calls = 0;
+  const { ctx } = load({ fetch: async () => { calls++; return new Response('{"error":0}'); } });
+  const footer = await (await ctx.window.fetch('/api/v4/pages/get_footer_layout')).json();
+  assert.deepEqual(footer, { error: 0, error_msg: null, data: { id: 1, name: '', pc: [], rw: [] } });
+  const cms = await (await ctx.window.fetch('/backend/CMS/footer/0/')).json();
+  assert.deepEqual(cms, { data: '' });
+  const prefills = await (await ctx.window.fetch('/api/v4/search/search_prefills')).json();
+  assert.deepEqual(prefills.data, { items: [], ordered_prefills: [] });
+  const pop = await (await ctx.window.fetch('/api/v4/search/search_suggestion?bundle=popsearch&limit=8&offset=0')).json();
+  assert.deepEqual(pop.data, { queries: [] });
+  const act = await (await ctx.window.fetch('/api/v4/notification/get_activities?limit=10')).json();
+  assert.deepEqual(act.data, { activities: [] });
+  const noti = await (await ctx.window.fetch('/api/v4/notification/get_notifications?limit=10')).json();
+  assert.deepEqual(noti.data, { actions: [] });
+  assert.equal(calls, 0);
+
+  // Typing autocomplete (without bundle=popsearch) still reaches the network when logged in.
+  await ctx.window.fetch('/api/v4/search/search_suggestion?keyword=usb');
+  assert.equal(calls, 1);
+});
+
+test('blocks requests and navigation to seller, help, social and foreign Shopee hosts while keeping auth and CDNs', async () => {
+  let calls = 0;
+  const { ctx, beacons, opened, historyCalls } = load({ fetch: async () => { calls++; return new Response('{"ok":1}'); } });
+
+  for (const u of [
+    'https://seller.shopee.tw/portal',
+    'https://help.shopee.tw/tw/s',
+    'https://careers.shopee.com/about/',
+    'https://facebook.com/ShopeeTW',
+    'https://connect.facebook.net/en_US/fbevents.js',
+    'https://instagram.com/Shopee_TW',
+    'https://line.me/R/ti/p/@shopee',
+    'https://page.line.me/shopee',
+    'https://linkedin.com/company/shopee',
+    'https://shopee.sg/',
+    'https://shopee.vn/',
+    'https://shopee.com.br/',
+  ]) {
+    await ctx.window.fetch(u);
+    ctx.navigator.sendBeacon(u, 'x');
+    assert.equal(ctx.window.open(u), null);
+    ctx.history.pushState(null, '', u);
+  }
+  const x = new ctx.XMLHttpRequest();
+  const done = new Promise((resolve) => x.addEventListener('load', resolve));
+  x.open('GET', '/backend/CMS/footer/0/');
+  x.send();
+  await done;
+  assert.equal(x.responseText, '{"data":""}');
+  assert.equal(calls, 0);
+  assert.equal(beacons.length, 0);
+  assert.equal(opened.length, 0);
+  assert.equal(historyCalls.length, 0);
+
+  // Blocked same-origin clutter routes vs allowed auth/search/product routes
+  ctx.history.pushState(null, '', '/seller/signup');
+  ctx.history.pushState(null, '', '/web/');
+  ctx.history.pushState(null, '', '/user/notifications/order');
+  ctx.history.pushState(null, '', '/blog');
+  assert.equal(historyCalls.length, 0);
+
+  ctx.history.pushState(null, '', '/buyer/login?next=');
+  ctx.history.pushState(null, '', '/buyer/signup?next=');
+  ctx.history.pushState(null, '', '/search?keyword=usb');
+  ctx.history.pushState(null, '', '/web-camera-i.1.2');
+  assert.equal(historyCalls.length, 4);
+
+  await ctx.window.fetch('https://down-tw.img.susercontent.com/file/abc');
+  await ctx.window.fetch('https://deo.shopeemobile.com/shopee/bundle.js');
+  assert.equal(calls, 2);
+
+  // Dynamically inserted scripts to blocked hosts (e.g. Facebook Pixel via GTM) lose src before insertion
+  const parent = ctx.document.createElement('div');
+  const fbScript = ctx.document.createElement('script');
+  fbScript.src = 'https://connect.facebook.net/en_US/fbevents.js';
+  parent.insertBefore(fbScript, null);
+  assert.equal(fbScript.src, undefined);
+
+  const cdnScript = ctx.document.createElement('script');
+  cdnScript.src = 'https://deo.shopeemobile.com/shopee/chunk.js';
+  parent.appendChild(cdnScript);
+  assert.equal(cdnScript.src, 'https://deo.shopeemobile.com/shopee/chunk.js');
+});
+
+test('disables DNS prefetch, hides clutter selectors without hiding auth/language, and strips blocked DOM links/images', () => {
+  const mk = (tag, props) => ({
+    tagName: tag.toUpperCase(),
+    ...props,
+    getAttribute(k) { return this[k] ?? null; },
+    setAttribute(k, v) { this[k] = String(v); },
+    removeAttribute(k) { delete this[k]; },
+  });
+  const badPreconnect = mk('link', { rel: 'preconnect', href: 'https://connect.facebook.net' });
+  const goodPreconnect = mk('link', { rel: 'preconnect', href: '//down-tw.img.susercontent.com/' });
+  const sellerLink = mk('a', { href: '//seller.shopee.tw' });
+  const footerImg = mk('img', { src: 'https://down-tw.img.susercontent.com/file/logo', srcset: 'x 1x' });
+  const blockedBox = {
+    querySelectorAll: () => [sellerLink, footerImg],
+  };
+  const { headNodes, get } = load({
+    querySelectorAll: (sel) => {
+      if (sel.includes('dns-prefetch')) return [badPreconnect, goodPreconnect];
+      if (sel.includes('nav.navbar')) return [blockedBox];
+      return [];
+    },
+  });
+
+  const meta = headNodes.find((n) => n.tagName === 'META');
+  assert.equal(meta?.httpEquiv, 'x-dns-prefetch-control');
+  assert.equal(meta?.content, 'off');
+
+  const style = headNodes.find((n) => n.tagName === 'STYLE');
+  assert.match(style.textContent, /footer/);
+  assert.match(style.textContent, /form\.shopee-searchbar ~ \*/);
+  // Must NOT hide all .navbar__link--notification (which Shopee reuses on the language switcher) or .navbar__link--auth.
+  assert.doesNotMatch(style.textContent, /\.navbar__link--auth/);
+  assert.doesNotMatch(style.textContent, /\.navbar__link--notification\s*[,{]/);
+
+  assert.equal(badPreconnect.href, undefined);
+  assert.equal(goodPreconnect.href, '//down-tw.img.susercontent.com/');
+  assert.equal(sellerLink.href, undefined);
+  assert.equal(sellerLink['aria-hidden'], 'true');
+  assert.equal(footerImg.src, undefined);
+  assert.equal(footerImg.srcset, undefined);
+  assert.ok(typeof get('disarm') === 'function');
+});

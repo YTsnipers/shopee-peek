@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0
+
+- 新增介面與請求封鎖（相容 Chrome、Ego Lite、Brave）：
+  - 隱藏並移除連結／圖片屬性：頁首工具列左側（賣家中心、隨拍即賣、下載、社群追蹤）與右側（通知總覽、幫助中心），保留語言切換、註冊、登入與帳號選單；搜尋框下方熱搜關鍵字列；全站頁尾（含客服／關於／金流物流圖示／跨國站點連結與 SEO 區塊）
+  - 發送前攔截無用請求並回傳符合元件結構的空資料（不發出網路請求）：`get_footer_layout`、`/backend/CMS/footer/`、`search_prefills`、`search_suggestion?bundle=popsearch`、`notification/*`
+  - 關閉瀏覽器連結 DNS 預解析（`x-dns-prefetch-control: off`），並在頁面內阻擋連往 `seller.shopee.tw`、`help.shopee.tw`、`careers.shopee.com`、社群追蹤（含 `connect.facebook.net`）及各國蝦皮網域的請求、腳本注入與跳轉
+  - 新增瀏覽器網路層過濾規則檔 `filters.txt`（支援 Brave Shields 自訂過濾規則，以及 Chrome／Ego Lite 搭配 uBlock Origin 或 AdGuard 匯入）
+  - 補強極早期 `document-start` 尚未建立 `documentElement` 時的掛載保護
+
 ## 0.7.0
 
 - 修復站內搜尋：蝦皮封鎖社群預覽 User-Agent（HTTP 403 + `90309999`）導致搜尋一律顯示「找不到結果」；改由 BigGo 並行取得蝦皮商城（`tw_mall_shopeemall`）與蝦皮拍賣（`tw_bid_shopee`）搜尋結果並交錯合併，單頁最多顯示 35 筆（7 排 × 5 欄，低於未登入 40 筆的登入提示門檻），不再請求 `shopee.tw/search` 或消耗蝦皮 IP 額度

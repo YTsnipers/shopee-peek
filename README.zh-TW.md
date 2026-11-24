@@ -29,15 +29,18 @@
 ## 安裝
 
 1. 安裝 [Tampermonkey](https://www.tampermonkey.net/)
-2. Chrome、Brave、Edge：到 `chrome://extensions` → Tampermonkey → 詳細資料 → 打開「允許使用者腳本」（Allow User Scripts）
+2. Chrome、Ego Lite、Brave、Edge：到 `chrome://extensions` → Tampermonkey → 詳細資料 → 打開「允許使用者腳本」（Allow User Scripts）
 3. 開啟 [shopee-peek.user.js](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/shopee-peek.user.js)，Tampermonkey 會跳出安裝頁
+4. （選配，網路層封鎖）匯入 [filters.txt](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/filters.txt)，在瀏覽器網路層直接攔截頁首雜項／熱搜詞／頁尾的請求與外連子網域連線：
+   - **Brave**：打開 `brave://settings/shields/filters`，於「新增過濾清單網址」貼上上述 `filters.txt` 網址（或貼入檔案內容）
+   - **Chrome / Ego Lite**：安裝 uBlock Origin 或 AdGuard 擴充功能，於自訂過濾清單匯入上述 `filters.txt` 網址
 
 之後的新版由 Tampermonkey 自動安裝。
 
 ## 支援範圍
 
 - 網站：只支援 shopee.tw
-- 已測試：Brave + Tampermonkey；未測試：Chrome、Edge、Firefox、Violentmonkey
+- 已測試：Brave、Ego Lite、Chrome + Tampermonkey；未測試：Edge、Firefox、Violentmonkey
 
 ## 運作原理
 
@@ -84,6 +87,8 @@ sequenceDiagram
 會改變網站行為的地方：
 
 - 沒有語言 cookie 時，設定 `language=zhHant`
+- 隱藏並移除頁首左側工具列、右側「通知總覽／幫助中心」（保留語言、註冊、登入與帳號選單）、搜尋框下方熱搜關鍵字列及全站頁尾的連結與圖片屬性；發送前攔截對應 API（`get_footer_layout`、`/backend/CMS/footer/`、`search_prefills`、`search_suggestion?bundle=popsearch`、`notification/*`）並關閉瀏覽器連結 DNS 預解析（`x-dns-prefetch-control: off`）
+- 阻擋頁面內連往 `seller.shopee.tw`、`help.shopee.tw`、`careers.shopee.com`、社群追蹤網域及跨國蝦皮站點的請求與跳轉
 - 丟棄所有跳往 `/verify/` 的頁內跳轉，**登入時也一樣**。蝦皮要求驗證（包括驗證碼）時，頁面不會帶你過去；需要驗證就先停用腳本
 - 搜尋結果的名稱與圖片網址暫存在 `sessionStorage`（`peek:` 開頭），關掉分頁就清除
 - 所有送往 `/api/` 的 XHR 改由 `fetch` 發出

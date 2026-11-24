@@ -1,0 +1,69 @@
+! Title: Shopee Peek Filters
+! Description: Block Shopee Taiwan header clutter (keeping login/signup/language), searchbar hotwords, footer, and their network/subdomain/external requests. Compatible with Brave Shields, uBlock Origin, and AdGuard (Chrome / Ego Lite / Brave).
+! Homepage: https://github.com/YTsnipers/shopee-peek
+! Expires: 7 days
+
+! --- API & CMS requests for blocked sections ---
+||shopee.tw/api/v4/pages/get_footer_layout^$domain=shopee.tw
+||shopee.tw/backend/CMS/footer/$domain=shopee.tw
+||shopee.tw/api/v4/search/search_prefills^$domain=shopee.tw
+||shopee.tw/api/v4/search/search_suggestion?*bundle=popsearch$domain=shopee.tw
+||shopee.tw/api/v4/notification/$domain=shopee.tw
+
+! --- Header social icons sprite & footer payment/logistics/QR/app assets ---
+||deo.shopeemobile.com/shopee/shopee-pcmall-live-sg/assets/69cb8a73e4e23af6.webp$image,domain=shopee.tw
+||deo.shopeemobile.com/shopee/shopee-pcmall-live-sg/assets/821f04b210432a71.png$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/08cad757b16c285bbd768870cb08cf53$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/c89f5e400512b891bd3dbd9ee25c120e$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/c59294a3e42f921b8c97a1833234fa0e$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/fcce0621aec0a5409c1e7d5252cfd136$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/f316a8e81ba98aa684d0f278be9c4c05$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/86bf82557d870ef093cc511ae243a59c$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/tw-50009109-97a9b580c9f04ec12d649b23bd2e4702$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/872bb8711db001a33e0e03e21860cbb0$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/tw-50009109-3bdda36a50e955d9bcf1c46748ee7657$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/tw-50009109-10af8e8aad4af4dbb239d46682a47435$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/tw-11134258-7rbk7-m77pvdog5o3mda$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/tw-11134258-7rbk8-m96upw6mmmzr60$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/f53618ce2c31cba7a71e4ea4fa08e93c$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/952b3cd5f11daa5242f9448fb76b5ae2$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/fc9052e647a0ec204e480fc27a35309f$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/8e2a1c69fe7255b705d0687c779fa962$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/144b82f1a4b78ebdc1ea68ec15a9eeae$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/b3153fde9f151c179cb2b4d854205ab9$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/4b01eb6a8fb3e25d7bca3805e1ebf3a4$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/4e4f8912bf8ff66be5c95fb2fe945358$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/dc9067c7bbb920656633cdca0cf40e6c$image,domain=shopee.tw
+||down-tw.img.susercontent.com/file/a28a7b61236921ec5b618815dafed1f8$image,domain=shopee.tw
+
+! --- Subdomains & external hosts linked from header/footer (scoped to shopee.tw) ---
+||seller.shopee.tw^$domain=shopee.tw
+||help.shopee.tw^$domain=shopee.tw
+||careers.shopee.com^$domain=shopee.tw
+||facebook.com^$domain=shopee.tw
+||connect.facebook.net^$domain=shopee.tw
+||instagram.com^$domain=shopee.tw
+||line.me^$domain=shopee.tw
+||linkedin.com^$domain=shopee.tw
+||shopee.com.ar^$domain=shopee.tw
+||shopee.sg^$domain=shopee.tw
+||shopee.co.id^$domain=shopee.tw
+||shopee.co.th^$domain=shopee.tw
+||shopee.com.my^$domain=shopee.tw
+||shopee.vn^$domain=shopee.tw
+||shopee.ph^$domain=shopee.tw
+||shopee.com.br^$domain=shopee.tw
+||shopee.com.mx^$domain=shopee.tw
+
+! --- Cosmetic hiding (preserves signup / login / language / account) ---
+shopee.tw##nav.navbar > :first-child:not(.navbar__spacer):not(.navbar__links)
+shopee.tw##.navbar__link--sell
+shopee.tw##.navbar__links > li.navbar__link--help
+shopee.tw##.navbar__links > li:has(#notifications)
+shopee.tw##.navbar__links > li:has(a[href*="/notifications"])
+shopee.tw##.navbar__links > li:has(.icon-notification-2)
+shopee.tw##.navbar__links > li:has(a[href*="help.shopee"])
+shopee.tw##.header-with-search__search-section > form.shopee-searchbar ~ *
+shopee.tw##.shopee-searchbar-hints__search-prefill
+shopee.tw##footer
+shopee.tw##[role="contentinfo"]

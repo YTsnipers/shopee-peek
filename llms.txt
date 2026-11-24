@@ -10,9 +10,9 @@ Behaviour:
 - Search results (up to 35 items, title and image, no price) come from BigGo (`tw_mall_shopeemall` and `tw_bid_shopee` interleaved), so searching does not hit Shopee's blocked social-preview route or spend Shopee IP quota. Shopee's frontend forbids pagination for logged-out users, so there is only page 1.
 - When Shopee rate-limits the IP and the LINE fetch returns nothing, a full-screen card shows title, image and BigGo price instead.
 - Never available logged out: units sold, ratings and reviews, shipping. Shopee removes them server-side.
-- Side effects: sets the `language=zhHant` cookie if none exists; hides the homepage popup banner; drops every in-page redirect to a URL containing `/verify/`, including captcha pages and when logged in; routes every XHR to `/api/` through `fetch`.
+- Side effects: sets the `language=zhHant` cookie if none exists; hides the homepage popup banner; hides and strips links/images from header clutter (keeping language, signup, login and account), searchbar hotwords and footer while short-circuiting their APIs and blocking external/subdomain clutter links (`x-dns-prefetch-control: off`); drops every in-page redirect to a URL containing `/verify/`, including captcha pages and when logged in; routes every XHR to `/api/` through `fetch`. Companion network filter rules live in `filters.txt`.
 - Data requests go only to `shopee.tw` and `biggo.com.tw`. Requests made through Tampermonkey carry no cookies; the shop lookup (`get_shop_base`) runs inside the page with Shopee's own cookies. No analytics, no remote code.
-- Tested on Brave + Tampermonkey. Chromium browsers need "Allow User Scripts" turned on for Tampermonkey in `chrome://extensions`.
+- Tested on Brave, Ego Lite and Chrome + Tampermonkey. Chromium browsers need "Allow User Scripts" turned on for Tampermonkey in `chrome://extensions`.
 
 ## Docs
 

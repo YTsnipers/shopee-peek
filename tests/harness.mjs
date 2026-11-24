@@ -29,14 +29,22 @@ class FakeXHR extends EventTarget {
   send() { this.nativeSend = true; }
 }
 
+class FakeNode {
+  appendChild(n) { return n; }
+  insertBefore(n) { return n; }
+}
+
 const element = (tag) => {
-  const n = {
+  const n = Object.assign(new FakeNode(), {
     tagName: tag.toUpperCase(), style: {}, textContent: '', children: [], id: '',
     append: (...c) => n.children.push(...c),
     remove: () => { n.removed = true; },
     querySelector: () => null,
+    querySelectorAll: () => [],
     getAttribute: (k) => n[k] ?? null,
-  };
+    setAttribute: (k, v) => { n[k] = String(v); },
+    removeAttribute: (k) => { delete n[k]; },
+  });
   return n;
 };
 
@@ -45,20 +53,37 @@ const element = (tag) => {
  * @param {string} [o.path] location.pathname
  * @param {(opts: object) => void} [o.gm] GM_xmlhttpRequest stub; call opts.onload/onerror/ontimeout
  * @param {(url: string, init?: object) => Promise<Response>} [o.fetch] network seen by the page
+ * @param {(sel: string) => Array<object>} [o.querySelectorAll] custom document.querySelectorAll stub
  */
-export const load = ({ path = '/', gm = () => {}, fetch = async () => new Response('{}') } = {}) => {
+export const load = ({ path = '/', gm = () => {}, fetch = async () => new Response('{}'), querySelectorAll = () => [] } = {}) => {
   const document = new EventTarget();
   const mounted = [];
+  const headNodes = [];
   const logs = [];
+  const observers = [];
+  const beacons = [];
+  const opened = [];
+  const historyCalls = [];
   let cookie = '';
   Object.defineProperty(document, 'cookie', { get: () => cookie, set: (v) => { cookie += `${v.split(';')[0]}; `; } });
   const ctx = {
     console: { info: (...a) => logs.push(a.map(String).join(' ')), log() {}, warn() {}, error() {} },
     location: { pathname: path, origin: 'https://shopee.tw', get href() { return `https://shopee.tw${this.pathname}`; } },
     sessionStorage: new Map(Object.entries({})),
-    history: { pushState: () => 'push', replaceState: () => 'replace' },
+    history: {
+      pushState: (s, t, url) => { historyCalls.push(['push', url]); return 'push'; },
+      replaceState: (s, t, url) => { historyCalls.push(['replace', url]); return 'replace'; },
+    },
+    navigator: { sendBeacon: (u, data) => { beacons.push([u, data]); return true; } },
+    open: (u, target) => { opened.push([u, target]); return { url: u }; },
+    MutationObserver: class {
+      constructor(cb) { this.cb = cb; observers.push(this); }
+      observe() {}
+      disconnect() {}
+    },
     DOMParser: FakeDOMParser,
     XMLHttpRequest: FakeXHR,
+    Node: FakeNode,
     ProgressEvent: class extends Event {},
     CustomEvent, Event, EventTarget, Response, URL, URLSearchParams, Promise, JSON,
     setTimeout, clearTimeout,
@@ -76,17 +101,25 @@ export const load = ({ path = '/', gm = () => {}, fetch = async () => new Respon
     documentElement: { dataset: {} },
     createElement: element,
     getElementById: (id) => mounted.find((n) => n.id === id && !n.removed) || null,
-    querySelectorAll: () => [],
+    querySelectorAll,
     body: { append: (n) => mounted.push(n) },
     head: {
       // The script injects page() through an inline <script>; run it in the same context.
-      appendChild: (n) => { if (n.tagName === 'SCRIPT') vm.runInContext(n.textContent, ctx); },
+      appendChild: (n) => {
+        headNodes.push(n);
+        if (n.tagName === 'SCRIPT') vm.runInContext(n.textContent, ctx);
+      },
     },
   });
   vm.runInContext(readFileSync(SCRIPT, 'utf8'), ctx);
   return {
     ctx,
     mounted,
+    headNodes,
+    observers,
+    beacons,
+    opened,
+    historyCalls,
     /** console.info lines, joined per call: what a user pastes into a bug report. */
     logs,
     /** Read a top-level binding of the script (const/let live in the context's script scope). */

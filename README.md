@@ -29,15 +29,18 @@ Shopee removes units sold, reviews and shipping from logged-out responses on its
 ## Install
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/).
-2. Chrome, Brave or Edge: open `chrome://extensions` → Tampermonkey → Details → turn on **Allow User Scripts**.
+2. Chrome, Ego Lite, Brave or Edge: open `chrome://extensions` → Tampermonkey → Details → turn on **Allow User Scripts**.
 3. Open [shopee-peek.user.js](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/shopee-peek.user.js); Tampermonkey shows its install page.
+4. Optional (browser network-layer blocking): add [filters.txt](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/filters.txt) to block header clutter, hotwords, footer assets and external/subdomain connections at the browser network layer:
+   - **Brave**: open `brave://settings/shields/filters` and add the `filters.txt` URL (or paste its contents).
+   - **Chrome / Ego Lite**: import the `filters.txt` URL as a custom filter list in uBlock Origin or AdGuard.
 
 Tampermonkey installs later versions automatically.
 
 ## Supported
 
 - Site: shopee.tw only
-- Tested: Brave + Tampermonkey. Untested: Chrome, Edge, Firefox, Violentmonkey.
+- Tested: Brave, Ego Lite, Chrome + Tampermonkey. Untested: Edge, Firefox, Violentmonkey.
 
 ## How it works
 
@@ -84,6 +87,7 @@ Details: [docs/how-it-works.md](docs/how-it-works.md). What was tried and why it
 Changes to how the site behaves:
 
 - Sets the `language=zhHant` cookie if no language cookie exists.
+- Hides and strips links/images from the top-bar clutter (keeping language, sign-up, login and account menu), the hot-keywords bar under the search box, and the site footer; short-circuits their APIs (`get_footer_layout`, `/backend/CMS/footer/`, `search_prefills`, `search_suggestion?bundle=popsearch`, `notification/*`) before hitting the network, disables link DNS prefetching (`x-dns-prefetch-control: off`), and blocks in-page requests/navigation to `seller.shopee.tw`, `help.shopee.tw`, `careers.shopee.com`, social trackers and foreign Shopee domains.
 - Drops every in-page redirect to `/verify/`, **logged in or not**. When Shopee asks you to verify (captcha included), the page won't take you there; disable the script when you need to verify.
 - Caches search-result names and image URLs in `sessionStorage` (keys start with `peek:`); they are cleared when the tab closes.
 - Sends every XHR to `/api/` through `fetch` instead.

@@ -29,15 +29,18 @@
 ## 安装
 
 1. 安装 [Tampermonkey](https://www.tampermonkey.net/)
-2. Chrome、Brave、Edge：打开 `chrome://extensions` → Tampermonkey → 详情 → 开启「允许用户脚本」（Allow User Scripts）
+2. Chrome、Ego Lite、Brave、Edge：打开 `chrome://extensions` → Tampermonkey → 详情 → 开启「允许用户脚本」（Allow User Scripts）
 3. 打开 [shopee-peek.user.js](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/shopee-peek.user.js)，Tampermonkey 会弹出安装页
+4. （可选，浏览器网络层拦截）导入 [filters.txt](https://raw.githubusercontent.com/YTsnipers/shopee-peek/main/filters.txt)，在浏览器网络层直接拦截页首杂项、搜索框热搜词、页尾资源与外链子域名连接：
+   - **Brave**：打开 `brave://settings/shields/filters`，添加上述 `filters.txt` 链接（或粘贴文件内容）
+   - **Chrome / Ego Lite**：在 uBlock Origin 或 AdGuard 自定义过滤规则中导入上述 `filters.txt` 链接
 
 之后的新版本由 Tampermonkey 自动安装。
 
 ## 支持范围
 
 - 网站：仅支持 shopee.tw
-- 已测试：Brave + Tampermonkey；未测试：Chrome、Edge、Firefox、Violentmonkey
+- 已测试：Brave、Ego Lite、Chrome + Tampermonkey；未测试：Edge、Firefox、Violentmonkey
 
 ## 工作原理
 
@@ -84,6 +87,8 @@ sequenceDiagram
 会改变网站行为的地方：
 
 - 没有语言 cookie 时，设置 `language=zhHant`
+- 隐藏并移除页首左侧工具栏、右侧「通知总览／帮助中心」（保留语言、注册、登录与账号菜单）、搜索框下方热搜词栏及全站页尾的链接与图片属性；在发送前拦截对应 API（`get_footer_layout`、`/backend/CMS/footer/`、`search_prefills`、`search_suggestion?bundle=popsearch`、`notification/*`）并关闭浏览器链接 DNS 预解析（`x-dns-prefetch-control: off`）
+- 阻挡页面内连往 `seller.shopee.tw`、`help.shopee.tw`、`careers.shopee.com`、社交追踪域名及跨国虾皮站点的请求与跳转
 - 丢弃所有跳往 `/verify/` 的页内跳转，**登录时也一样**。虾皮要求验证（包括验证码）时，页面不会带你过去；需要验证就先停用脚本
 - 搜索结果的名称与图片链接暂存在 `sessionStorage`（`peek:` 开头），关闭标签页即清除
 - 所有发往 `/api/` 的 XHR 改由 `fetch` 发出
